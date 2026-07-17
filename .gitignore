@@ -1,0 +1,46 @@
+# Binaries
+/obd
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# SQLite databases
+/db/
+*.db
+*.db-*
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Go / tooling
+vendor/
+coverage.out
+coverage.html
+*.coverprofile
+.profile
+cpu.prof
+mem.prof
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Temp
+/tmp/
+/tmpdebug/
