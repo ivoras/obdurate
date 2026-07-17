@@ -473,38 +473,49 @@ func (s *Store) MoveTask(id int64, columnRef string, position *int, actorRef str
 	fromName := t.ColumnName
 	fromPos := t.Position
 
-	var max sql.NullInt64
-	if err := tx.QueryRow(`SELECT MAX(position) FROM tasks WHERE column_id = ? AND id != ?`, col.ID, t.ID).Scan(&max); err != nil {
+	// Remove-then-insert: order the destination column without the moving
+	// task, clamp the requested position into [0, len], splice the task in,
+	// and rewrite positions 0..n. Handles same-column moves without holes.
+	destRows, err := tx.Query(`SELECT id FROM tasks WHERE column_id = ? AND id != ? ORDER BY position, id`, col.ID, t.ID)
+	if err != nil {
 		return nil, err
 	}
-	end := 0
-	if max.Valid {
-		end = int(max.Int64) + 1
+	var destIDs []int64
+	for destRows.Next() {
+		var tid int64
+		if err := destRows.Scan(&tid); err != nil {
+			destRows.Close()
+			return nil, err
+		}
+		destIDs = append(destIDs, tid)
 	}
-	pos := end
+	if err := destRows.Err(); err != nil {
+		destRows.Close()
+		return nil, err
+	}
+	destRows.Close()
+
+	pos := len(destIDs)
 	if position != nil {
-		// Clamp to [0, end] so explicit positions cannot go negative or leave gaps.
 		pos = *position
 		if pos < 0 {
 			pos = 0
 		}
-		if pos > end {
-			pos = end
+		if pos > len(destIDs) {
+			pos = len(destIDs)
 		}
 	}
+	ordered := append(destIDs[:pos:pos], append([]int64{t.ID}, destIDs[pos:]...)...)
 
-	// Shift tasks in destination at/after pos.
-	_, err = tx.Exec(`UPDATE tasks SET position = position + 1 WHERE column_id = ? AND position >= ? AND id != ?`,
-		col.ID, pos, t.ID)
+	ts := now()
+	_, err = tx.Exec(`UPDATE tasks SET column_id=?, updated_at=? WHERE id=?`, col.ID, ts, t.ID)
 	if err != nil {
 		return nil, err
 	}
-
-	ts := now()
-	_, err = tx.Exec(`UPDATE tasks SET column_id=?, position=?, updated_at=? WHERE id=?`,
-		col.ID, pos, ts, t.ID)
-	if err != nil {
-		return nil, err
+	for i, tid := range ordered {
+		if _, err := tx.Exec(`UPDATE tasks SET position = ? WHERE id = ?`, i, tid); err != nil {
+			return nil, err
+		}
 	}
 
 	// Compact original column positions.

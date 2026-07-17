@@ -300,8 +300,13 @@ func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Shift columns at or after position.
-	_, err = tx.Exec(`UPDATE columns SET position = position + 1 WHERE board_id = ? AND position >= ?`, b.ID, pos)
+	// Shift columns at or after position. Two steps via negative temporaries:
+	// UNIQUE(board_id, position) forbids a single in-place +1 update.
+	_, err = tx.Exec(`UPDATE columns SET position = -(position + 2) WHERE board_id = ? AND position >= ?`, b.ID, pos)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(`UPDATE columns SET position = -position - 1 WHERE board_id = ? AND position < 0`, b.ID)
 	if err != nil {
 		return nil, err
 	}

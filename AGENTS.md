@@ -130,7 +130,7 @@ Keep README **Releases (CI)** section in sync if the workflow or assets change.
 ```bash
 make build          # or: go build -o obd ./cmd/obd
 make vet
-make test           # when tests exist
+make test           # store/db/cli test suites; keep green and extend with behavior changes
 ./obd --help
 ./obd <cmd> --help
 ```
