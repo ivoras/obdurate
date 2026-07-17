@@ -1,8 +1,11 @@
 # Obdurate (`obd`) setup instructions for the OpenClaw agent
 
 You are an OpenClaw agent reading this file to set up the Obdurate kanban
-project-management scheme for your user. Follow the steps in order. Ask the
-user before anything marked **ASK**. Report each step's outcome briefly.
+project-management scheme for your user. The GitHub repo for Obdurate is
+at https://github.com/ivoras/obdurate .
+
+Follow the steps in order. Ask the user before anything marked **ASK**. 
+Report each step's outcome briefly.
 
 ## 1. Locate the OpenClaw root directory
 
