@@ -211,8 +211,8 @@ func taskDelete(app *App) *cobra.Command {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted task %d", id))
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(map[string]any{"status": "deleted", "id": id})
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]any{"status": "deleted", "id": id})
 			}
 			return nil
 		},
@@ -347,16 +347,16 @@ func taskMine(app *App) *cobra.Command {
 }
 
 func printTask(app *App, t *model.Task) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(t)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(t)
 	}
 	rows := [][]string{taskRow(t)}
 	return app.Print.PrintTable(taskHeaders(), rows)
 }
 
 func printTaskList(app *App, list []model.Task) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(list)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(list)
 	}
 	rows := make([][]string, 0, len(list))
 	for i := range list {

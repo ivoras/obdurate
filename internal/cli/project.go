@@ -54,8 +54,8 @@ func projectList(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(list)
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(list)
 			}
 			rows := make([][]string, 0, len(list))
 			for _, p := range list {
@@ -119,8 +119,8 @@ func projectDelete(app *App) *cobra.Command {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted project %s", args[0]))
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(map[string]string{"status": "deleted", "ref": args[0]})
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]string{"status": "deleted", "ref": args[0]})
 			}
 			return nil
 		},
@@ -128,8 +128,8 @@ func projectDelete(app *App) *cobra.Command {
 }
 
 func printProject(app *App, p *model.Project) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(p)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(p)
 	}
 	rows := [][]string{{
 		strconv.FormatInt(p.ID, 10), p.Name, p.Description,

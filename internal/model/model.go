@@ -4,6 +4,8 @@ import "time"
 
 type Role string
 
+func (r Role) String() string { return string(r) }
+
 const (
 	RoleAdmin     Role = "admin"
 	RoleLead      Role = "lead"
@@ -21,6 +23,8 @@ func ValidRole(r string) bool {
 }
 
 type Priority string
+
+func (p Priority) String() string { return string(p) }
 
 const (
 	PriorityLow      Priority = "low"

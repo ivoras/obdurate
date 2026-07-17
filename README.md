@@ -8,7 +8,7 @@ CLI project management tool with a kanban-style workflow. Data is stored in SQLi
 - Columns customizable per board (defaults: **Todo / Doing / Done**)
 - **Tasks** with title, description, assignee, priority, tags, watchers
 - Unified **activity stream** (system events + comments)
-- Script-friendly **JSON / CSV** output and stable process exit codes
+- Script-friendly **JSON / CSV / TOON** output and stable process exit codes
 
 ## Requirements
 
@@ -61,9 +61,10 @@ Other targets: `make test`, `make vet`, `make fmt`, `make clean`.
 | `--db PATH` | SQLite database path (default: `./db/obdurate.db`; parent dirs are created) |
 | `--json` | Machine-readable JSON output |
 | `--csv` | Machine-readable CSV output |
+| `--toon` | Machine-readable [TOON](https://github.com/toon-format/toon-go) output |
 | `-h, --help` | Help |
 
-Use only one of `--json` or `--csv`.
+Use only one of `--json`, `--csv`, or `--toon`.
 
 ### Exit codes
 
@@ -171,7 +172,7 @@ List activity / comments globally with filters:
 
 | Command | Description |
 |---------|-------------|
-| `export tasks` | Export tasks (`--board` or `--project`); defaults to JSON if no format flag |
+| `export tasks` | Export tasks (`--board` or `--project`); defaults to JSON if no `--json`/`--csv`/`--toon` |
 
 ### `obd version`
 
@@ -192,6 +193,9 @@ Generate shell completion scripts (`obd completion --help`).
 
 # JSON for scripting
 ./obd task list --board widget/sprint-1 --json | jq '.[].title'
+
+# TOON for compact structured output
+./obd task list --board widget/sprint-1 --toon
 
 # CSV export
 ./obd export tasks --project widget --csv > tasks.csv

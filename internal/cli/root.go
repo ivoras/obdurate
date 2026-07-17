@@ -17,6 +17,7 @@ type App struct {
 	DBPath string
 	JSON   bool
 	CSV    bool
+	TOON   bool
 	Print  *Printer
 	Store  *store.Store
 }
@@ -30,7 +31,7 @@ func NewRoot() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := app.Print.SetFlags(app.JSON, app.CSV); err != nil {
+			if err := app.Print.SetFlags(app.JSON, app.CSV, app.TOON); err != nil {
 				return err
 			}
 			// Skip DB open for pure meta commands.
@@ -58,6 +59,7 @@ func NewRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&app.DBPath, "db", defaultDBPath, "path to SQLite database")
 	root.PersistentFlags().BoolVar(&app.JSON, "json", false, "output JSON")
 	root.PersistentFlags().BoolVar(&app.CSV, "csv", false, "output CSV")
+	root.PersistentFlags().BoolVar(&app.TOON, "toon", false, "output TOON format")
 
 	root.AddCommand(
 		newDeveloperCmd(app),

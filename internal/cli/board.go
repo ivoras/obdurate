@@ -58,8 +58,8 @@ func boardList(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(list)
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(list)
 			}
 			rows := make([][]string, 0, len(list))
 			for _, b := range list {
@@ -128,8 +128,8 @@ func boardDelete(app *App) *cobra.Command {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted board %s", args[0]))
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(map[string]string{"status": "deleted", "ref": args[0]})
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]string{"status": "deleted", "ref": args[0]})
 			}
 			return nil
 		},
@@ -146,8 +146,8 @@ func boardShow(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(view)
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(view)
 			}
 			if app.Print.Mode == OutputCSV {
 				var rows [][]string
@@ -203,8 +203,8 @@ func boardShow(app *App) *cobra.Command {
 }
 
 func printBoard(app *App, b *model.Board) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(b)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(b)
 	}
 	rows := [][]string{{
 		strconv.FormatInt(b.ID, 10),
@@ -273,8 +273,8 @@ func columnList(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(cols)
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(cols)
 			}
 			rows := make([][]string, 0, len(cols))
 			for _, c := range cols {
@@ -346,8 +346,8 @@ func columnDelete(app *App) *cobra.Command {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted column %s", args[0]))
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(map[string]string{"status": "deleted", "column": args[0]})
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]string{"status": "deleted", "column": args[0]})
 			}
 			return nil
 		},
@@ -358,8 +358,8 @@ func columnDelete(app *App) *cobra.Command {
 }
 
 func printColumn(app *App, c *model.Column) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(c)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(c)
 	}
 	rows := [][]string{{
 		strconv.FormatInt(c.ID, 10),

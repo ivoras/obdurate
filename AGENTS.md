@@ -28,7 +28,7 @@ Do **not** leave user docs stale. If a CLI help string changes, mirror it in REA
 - **Binary:** `obd`
 - **DB:** SQLite (`--db`, default `./db/obdurate.db`)
 - **Auth:** none — all actions allowed
-- **UX:** Cobra subcommands; script-friendly (`--json` / `--csv`, exit codes)
+- **UX:** Cobra subcommands; script-friendly (`--json` / `--csv` / `--toon`, exit codes)
 
 ## Layout
 
@@ -67,7 +67,7 @@ Priority: `low|medium|high|critical` (default medium).
 
 ### App lifecycle (`internal/cli/root.go`)
 
-- Global flags: `--db`, `--json`, `--csv`
+- Global flags: `--db`, `--json`, `--csv`, `--toon`
 - `PersistentPreRunE` opens DB (creates parent dirs + applies schema) for most commands
 - Skips DB for: root help, `help`, `completion`, `version`
 - Exit mapping: not found → 2; invalid/conflict/exists → 3; else → 1
@@ -87,8 +87,10 @@ Priority: `low|medium|high|critical` (default medium).
 
 ### Output
 
-- `internal/cli/output.go` — table (default), JSON, CSV
-- `export tasks` forces JSON if neither `--json` nor `--csv` was set
+- `internal/cli/output.go` — table (default), JSON, CSV, TOON (`github.com/toon-format/toon-go`)
+- Mutually exclusive: `--json`, `--csv`, `--toon`
+- Structured object dumps use `PreferStructured()` + `PrintStructured()` (JSON or TOON)
+- `export tasks` forces JSON if no machine-readable format flag was set
 
 ## CLI command map (source of truth sites)
 

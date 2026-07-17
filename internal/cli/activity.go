@@ -40,7 +40,7 @@ func newActivityCmd(app *App) *cobra.Command {
 func newExportCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export data (use --json or --csv)",
+		Short: "Export data (use --json, --csv, or --toon)",
 	}
 	cmd.AddCommand(exportTasks(app))
 	return cmd
@@ -75,15 +75,15 @@ func exportTasks(app *App) *cobra.Command {
 }
 
 func printActivityOne(app *App, a *model.Activity) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(a)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(a)
 	}
 	return printActivityList(app, []model.Activity{*a})
 }
 
 func printActivityList(app *App, list []model.Activity) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(list)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(list)
 	}
 	rows := make([][]string, 0, len(list))
 	for _, a := range list {

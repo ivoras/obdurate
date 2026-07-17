@@ -63,8 +63,8 @@ func devList(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(list)
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(list)
 			}
 			rows := make([][]string, 0, len(list))
 			for _, d := range list {
@@ -151,8 +151,8 @@ func devDelete(app *App) *cobra.Command {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted developer %s", args[0]))
-			if app.Print.Mode == OutputJSON {
-				return app.Print.PrintJSON(map[string]string{"status": "deleted", "ref": args[0]})
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]string{"status": "deleted", "ref": args[0]})
 			}
 			return nil
 		},
@@ -160,8 +160,8 @@ func devDelete(app *App) *cobra.Command {
 }
 
 func printDeveloper(app *App, d *model.Developer) error {
-	if app.Print.Mode == OutputJSON {
-		return app.Print.PrintJSON(d)
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(d)
 	}
 	slack := ""
 	if d.SlackID != nil {

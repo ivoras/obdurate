@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/toon-format/toon-go"
 )
 
 type OutputMode int
@@ -18,6 +20,7 @@ const (
 	OutputTable OutputMode = iota
 	OutputJSON
 	OutputCSV
+	OutputTOON
 )
 
 type Printer struct {
@@ -30,24 +33,68 @@ func NewPrinter() *Printer {
 	return &Printer{Out: os.Stdout, Err: os.Stderr, Mode: OutputTable}
 }
 
-func (p *Printer) SetFlags(jsonOut, csvOut bool) error {
-	if jsonOut && csvOut {
-		return fmt.Errorf("use only one of --json or --csv")
-	}
+func (p *Printer) SetFlags(jsonOut, csvOut, toonOut bool) error {
+	n := 0
 	if jsonOut {
+		n++
+	}
+	if csvOut {
+		n++
+	}
+	if toonOut {
+		n++
+	}
+	if n > 1 {
+		return fmt.Errorf("use only one of --json, --csv, or --toon")
+	}
+	switch {
+	case jsonOut:
 		p.Mode = OutputJSON
-	} else if csvOut {
+	case csvOut:
 		p.Mode = OutputCSV
-	} else {
+	case toonOut:
+		p.Mode = OutputTOON
+	default:
 		p.Mode = OutputTable
 	}
 	return nil
+}
+
+func (p *Printer) PreferStructured() bool {
+	return p.Mode == OutputJSON || p.Mode == OutputTOON
+}
+
+func (p *Printer) PrintStructured(v any) error {
+	switch p.Mode {
+	case OutputTOON:
+		return p.PrintTOON(v)
+	default:
+		return p.PrintJSON(v)
+	}
 }
 
 func (p *Printer) PrintJSON(v any) error {
 	enc := json.NewEncoder(p.Out)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+func (p *Printer) PrintTOON(v any) error {
+	// Round-trip via JSON so field names match --json (json struct tags).
+	jb, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	var generic any
+	if err := json.Unmarshal(jb, &generic); err != nil {
+		return err
+	}
+	b, err := toon.Marshal(generic, toon.WithIndent(2))
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(p.Out, string(b))
+	return err
 }
 
 func (p *Printer) PrintOK(msg string) {
@@ -58,7 +105,7 @@ func (p *Printer) PrintOK(msg string) {
 
 func (p *Printer) PrintTable(headers []string, rows [][]string) error {
 	switch p.Mode {
-	case OutputJSON:
+	case OutputJSON, OutputTOON:
 		objs := make([]map[string]string, 0, len(rows))
 		for _, r := range rows {
 			m := map[string]string{}
@@ -69,7 +116,7 @@ func (p *Printer) PrintTable(headers []string, rows [][]string) error {
 			}
 			objs = append(objs, m)
 		}
-		return p.PrintJSON(objs)
+		return p.PrintStructured(objs)
 	case OutputCSV:
 		w := csv.NewWriter(p.Out)
 		if err := w.Write(headers); err != nil {
@@ -128,7 +175,6 @@ func exitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	// map known store errors loosely via message prefix
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "not found"):
