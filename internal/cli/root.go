@@ -89,12 +89,17 @@ func Execute() {
 	}
 }
 
+var (
+	// Version is set at link time: -ldflags "-X obdurate/internal/cli.Version=v1.0.0"
+	Version = "dev"
+)
+
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("obd 0.1.0")
+			fmt.Println("obd", Version)
 		},
 	}
 }

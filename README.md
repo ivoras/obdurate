@@ -12,7 +12,7 @@ CLI project management tool with a kanban-style workflow. Data is stored in SQLi
 
 ## Requirements
 
-- Go 1.22+ (module tested with Go 1.26)
+- **Go**: track a [current stable](https://go.dev/dl/) release (module is `go 1.26`; `modernc.org/sqlite` requires **1.25+**)
 - No CGO required (pure-Go SQLite driver: `modernc.org/sqlite`)
 
 ## Build
@@ -200,6 +200,69 @@ Generate shell completion scripts (`obd completion --help`).
 # CSV export
 ./obd export tasks --project widget --csv > tasks.csv
 ```
+
+## Releases (CI)
+
+Pushing a version tag `v*` runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which:
+
+1. Runs `go vet` and `go test`
+2. Builds **Linux amd64** (`obd-linux-amd64`) and **Windows amd64** (`obd-windows-amd64.exe`) with `CGO_ENABLED=0`
+3. Embeds the tag into `obd version` via ldflags
+4. Creates a GitHub Release with those binaries plus `checksums.txt`
+
+### Create a release yourself
+
+**From the CLI (recommended):**
+
+```bash
+# on main/master, with a clean tree, after pushes are up to date
+git pull
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+Then open the **Actions** tab → workflow **Release** → when green, open **Releases** for downloads.
+
+Equivalent with GitHub CLI (creates the annotated tag and GitHub release metadata; CI still attaches bins when the tag is on the remote):
+
+```bash
+gh release create v0.1.0 --generate-notes --title "v0.1.0"
+# if the tag does not exist yet, gh creates it from the current commit
+```
+
+**From the GitHub website:**
+
+1. Repo → **Releases** → **Draft a new release**
+2. **Choose a tag** → type `v0.1.0` → **Create new tag** on the default branch
+3. Title e.g. `v0.1.0` → **Publish release**  
+   (Publishing creates/pushes the tag, which starts the workflow; assets appear on the release when the job finishes. If a release shell already exists without assets, re-run the workflow or re-push the tag carefully.)
+
+If you only need the tag from the UI without drafting notes first, you can also: **Releases** → new release → create tag only and publish, or push the tag from git as above.
+
+### Ask an agent (e.g. me) to cut a release
+
+In chat, after the desired commits are on the remote default branch:
+
+```text
+Create release v0.1.0: tag the current origin tip, push the tag, and open/watch the GitHub release.
+```
+
+or shorter:
+
+```text
+Ship v0.1.0
+```
+
+I will then (unless you say otherwise): verify clean status, use the latest commit on the tracked remote branch, create an annotated tag `v0.1.0`, `git push origin v0.1.0`, and optionally `gh release view` / wait for Actions. **I will not force-push tags or rewrite history.**
+
+### Local version string
+
+```bash
+go build -ldflags "-X obdurate/internal/cli.Version=v0.1.0" -o obd ./cmd/obd
+./obd version   # → obd v0.1.0
+```
+
+Without ldflags, version is `dev`.
 
 ## License
 

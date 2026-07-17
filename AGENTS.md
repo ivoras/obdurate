@@ -26,6 +26,7 @@ Do **not** leave user docs stale. If a CLI help string changes, mirror it in REA
 
 - **Module:** `obdurate`
 - **Binary:** `obd`
+- **Go version:** track current stable (see `go` line in `go.mod`; do not pin an outdated LTS like 1.22 unless required by a dep floor)
 - **DB:** SQLite (`--db`, default `./db/obdurate.db`)
 - **Auth:** none — all actions allowed
 - **UX:** Cobra subcommands; script-friendly (`--json` / `--csv` / `--toon`, exit codes)
@@ -105,6 +106,22 @@ Priority: `low|medium|high|critical` (default medium).
 | store | `internal/store/*.go` |
 
 When adding a command group, register it in `NewRoot()` and document it in README.
+
+## Releases / CI
+
+- Workflow: `.github/workflows/release.yml`
+- Trigger: push of tags matching `v*`
+- Builds: `obd-linux-amd64`, `obd-windows-amd64.exe`, `checksums.txt` → GitHub Release
+- Version: `-ldflags "-X obdurate/internal/cli.Version=<tag>"` (default `dev`)
+
+When the user asks to ship/release:
+
+1. Ensure working tree is clean and default branch matches remote tip
+2. Create annotated tag `vX.Y.Z` and push `origin vX.Y.Z`
+3. Do not force-push tags; do not invent changelog unless asked
+4. Prefer `gh` to show release/Actions status if available
+
+Keep README **Releases (CI)** section in sync if the workflow or assets change.
 
 ## Build & verification
 
