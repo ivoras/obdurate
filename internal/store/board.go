@@ -189,7 +189,7 @@ func (s *Store) ListBoards(projectRef string) ([]model.Board, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.Board
+	out := []model.Board{}
 	for rows.Next() {
 		var b model.Board
 		var created, updated string
@@ -212,7 +212,7 @@ FROM columns WHERE board_id = ? ORDER BY position`
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.Column
+	out := []model.Column{}
 	for rows.Next() {
 		var c model.Column
 		var created, updated string
@@ -274,16 +274,23 @@ func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, 
 		return nil, fmt.Errorf("%w: column name is required", ErrInvalidInput)
 	}
 
-	pos := 0
+	var max sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(position) FROM columns WHERE board_id = ?`, b.ID).Scan(&max); err != nil {
+		return nil, err
+	}
+	end := 0
+	if max.Valid {
+		end = int(max.Int64) + 1
+	}
+	pos := end
 	if position != nil {
+		// Clamp to [0, end] so explicit positions cannot go negative or leave gaps.
 		pos = *position
-	} else {
-		var max sql.NullInt64
-		if err := s.db.QueryRow(`SELECT MAX(position) FROM columns WHERE board_id = ?`, b.ID).Scan(&max); err != nil {
-			return nil, err
+		if pos < 0 {
+			pos = 0
 		}
-		if max.Valid {
-			pos = int(max.Int64) + 1
+		if pos > end {
+			pos = end
 		}
 	}
 

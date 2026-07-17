@@ -85,11 +85,19 @@ Developer (global) ← assigned to / watches tasks
 Activity (unified stream of events + comments)
 ```
 
+- **Default project**: a brand-new database is seeded with a project named
+  `Default` containing a board `main` (with the standard columns), so tasks
+  can be created immediately without any setup. It is an ordinary project —
+  rename or delete it freely; it is only re-seeded when the database has no
+  projects at all.
 - **Developer roles** (informational only): `admin`, `lead`, `developer`, `viewer`
 - **Task priority**: `low`, `medium` (default), `high`, `critical`
 - **Developer references**: numeric id, email, username, or Slack id
 - **Board references**: numeric id, unique name, or `project/board` (recommended)
 - **Column references**: name or id (scoped to a board)
+- **Positions**: explicit `--position` values are clamped to the valid range
+  (negative → 0, past-the-end → append)
+- Machine-readable list output is always a JSON array (`[]` when empty, never `null`)
 
 ## Commands
 
@@ -167,6 +175,28 @@ Activity (unified stream of events + comments)
 List activity / comments globally with filters:
 
 - `--board`, `--project`, `--task`, `--limit` (default 50)
+
+#### Activity `data` payloads
+
+Every non-comment activity row carries a `data` JSON field (visible in
+`--json`/`--toon` output) with structured old/new state, so previous and next
+task state can be reconstructed from the stream:
+
+| Kind | Payload |
+|------|---------|
+| `created` | `{"task": <snapshot>}` — full initial state |
+| `updated` | `{"changes": {"<field>": {"old": ..., "new": ...}, ...}}` |
+| `moved` | `{"from": {"column", "column_id", "position"}, "to": {...}}` |
+| `deleted` | `{"task": <snapshot>}` — full final state |
+| `watched` / `unwatched` | `{"developer": "<username>"}` |
+| `commented` | none (the `message` is the comment text) |
+
+A task snapshot contains: `id`, `title`, `description`, `column`, `column_id`,
+`priority`, `position`, `assignee` (username or null), `tags`, `watchers`.
+
+Deleting a task does **not** erase its history: its activity rows are detached
+(`task_id` is cleared and preserved as `data.task_id`) and remain in the board
+and project streams.
 
 ### `obd export`
 

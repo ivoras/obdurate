@@ -56,12 +56,14 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 	}
 
 	var assigneeID *int64
+	var assigneeUser string
 	if strings.TrimSpace(in.AssigneeRef) != "" {
 		d, err := s.ResolveDeveloper(in.AssigneeRef)
 		if err != nil {
 			return nil, fmt.Errorf("assignee: %w", err)
 		}
 		assigneeID = &d.ID
+		assigneeUser = d.Username
 	}
 
 	var actorID *int64
@@ -73,9 +75,15 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 		actorID = &a.ID
 	}
 
-	watcherIDs, err := s.resolveDeveloperIDs(in.WatcherRefs)
+	watchers, err := s.resolveDevelopers(in.WatcherRefs)
 	if err != nil {
 		return nil, err
+	}
+	watcherIDs := make([]int64, 0, len(watchers))
+	watcherUsers := make([]string, 0, len(watchers))
+	for _, w := range watchers {
+		watcherIDs = append(watcherIDs, w.ID)
+		watcherUsers = append(watcherUsers, w.Username)
 	}
 
 	tx, err := s.db.Begin()
@@ -107,15 +115,32 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 		return nil, err
 	}
 
-	if err := s.setTagsTx(tx, taskID, in.Tags); err != nil {
+	appliedTags, err := s.setTagsTx(tx, taskID, in.Tags)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.setWatcherIDsTx(tx, taskID, watcherIDs); err != nil {
 		return nil, err
 	}
 
+	var assigneeVal any
+	if assigneeUser != "" {
+		assigneeVal = assigneeUser
+	}
+	data := map[string]any{"task": map[string]any{
+		"id":          taskID,
+		"title":       title,
+		"description": in.Description,
+		"column":      col.Name,
+		"column_id":   col.ID,
+		"priority":    string(priority),
+		"position":    pos,
+		"assignee":    assigneeVal,
+		"tags":        appliedTags,
+		"watchers":    watcherUsers,
+	}}
 	msg := fmt.Sprintf("created task %q in column %q", title, col.Name)
-	if err := s.addActivityTx(tx, &taskID, &b.ProjectID, &b.ID, actorID, model.ActivityCreated, msg); err != nil {
+	if err := s.addActivityTx(tx, &taskID, &b.ProjectID, &b.ID, actorID, model.ActivityCreated, msg, data); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -205,11 +230,13 @@ WHERE tw.task_id = ? ORDER BY d.username`, taskID)
 	return out, rows.Err()
 }
 
-func (s *Store) setTagsTx(tx *sql.Tx, taskID int64, tags []string) error {
+// setTagsTx replaces a task's tags and returns the normalized applied list.
+func (s *Store) setTagsTx(tx *sql.Tx, taskID int64, tags []string) ([]string, error) {
 	if _, err := tx.Exec(`DELETE FROM task_tags WHERE task_id = ?`, taskID); err != nil {
-		return err
+		return nil, err
 	}
 	seen := map[string]bool{}
+	applied := []string{}
 	for _, raw := range tags {
 		name := strings.TrimSpace(raw)
 		if name == "" || seen[strings.ToLower(name)] {
@@ -221,25 +248,26 @@ func (s *Store) setTagsTx(tx *sql.Tx, taskID int64, tags []string) error {
 		if err == sql.ErrNoRows {
 			res, err := tx.Exec(`INSERT INTO tags (name) VALUES (?)`, name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			tagID, err = res.LastInsertId()
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if err != nil {
-			return err
+			return nil, err
 		}
 		if _, err := tx.Exec(`INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)`, taskID, tagID); err != nil {
-			return err
+			return nil, err
 		}
+		applied = append(applied, name)
 	}
-	return nil
+	return applied, nil
 }
 
-func (s *Store) resolveDeveloperIDs(refs []string) ([]int64, error) {
+func (s *Store) resolveDevelopers(refs []string) ([]model.Developer, error) {
 	seen := map[int64]bool{}
-	var ids []int64
+	var out []model.Developer
 	for _, ref := range refs {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
@@ -253,9 +281,26 @@ func (s *Store) resolveDeveloperIDs(refs []string) ([]int64, error) {
 			continue
 		}
 		seen[d.ID] = true
-		ids = append(ids, d.ID)
+		out = append(out, *d)
 	}
-	return ids, nil
+	return out, nil
+}
+
+// sameTagSet compares tag lists ignoring order and case.
+func sameTagSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := map[string]bool{}
+	for _, t := range a {
+		set[strings.ToLower(t)] = true
+	}
+	for _, t := range b {
+		if !set[strings.ToLower(t)] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) setWatcherIDsTx(tx *sql.Tx, taskID int64, ids []int64) error {
@@ -299,6 +344,7 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 	}
 
 	var changes []string
+	changed := map[string]any{}
 	if u.Title != nil {
 		title := strings.TrimSpace(*u.Title)
 		if title == "" {
@@ -306,11 +352,13 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 		}
 		if title != t.Title {
 			changes = append(changes, fmt.Sprintf("title %q → %q", t.Title, title))
+			changed["title"] = fieldChange(t.Title, title)
 			t.Title = title
 		}
 	}
 	if u.Description != nil && *u.Description != t.Description {
 		changes = append(changes, "description updated")
+		changed["description"] = fieldChange(t.Description, *u.Description)
 		t.Description = *u.Description
 	}
 	if u.Priority != nil {
@@ -319,13 +367,19 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 		}
 		if *u.Priority != t.Priority {
 			changes = append(changes, fmt.Sprintf("priority %s → %s", t.Priority, *u.Priority))
+			changed["priority"] = fieldChange(string(t.Priority), string(*u.Priority))
 			t.Priority = *u.Priority
 		}
 	}
 	if u.AssigneeRef != nil {
+		var oldAssignee any
+		if t.AssigneeRef != "" {
+			oldAssignee = t.AssigneeRef
+		}
 		if strings.TrimSpace(*u.AssigneeRef) == "" {
 			if t.AssigneeID != nil {
 				changes = append(changes, "assignee cleared")
+				changed["assignee"] = fieldChange(oldAssignee, nil)
 				t.AssigneeID = nil
 			}
 		} else {
@@ -335,6 +389,7 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 			}
 			if t.AssigneeID == nil || *t.AssigneeID != d.ID {
 				changes = append(changes, fmt.Sprintf("assignee → %s", d.Username))
+				changed["assignee"] = fieldChange(oldAssignee, d.Username)
 				t.AssigneeID = &d.ID
 			}
 		}
@@ -356,15 +411,24 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 	}
 
 	if u.Tags != nil {
-		if err := s.setTagsTx(tx, t.ID, *u.Tags); err != nil {
+		oldTags := t.Tags
+		if oldTags == nil {
+			oldTags = []string{}
+		}
+		newTags, err := s.setTagsTx(tx, t.ID, *u.Tags)
+		if err != nil {
 			return nil, err
 		}
-		changes = append(changes, "tags updated")
+		if !sameTagSet(oldTags, newTags) {
+			changes = append(changes, "tags updated")
+			changed["tags"] = fieldChange(oldTags, newTags)
+		}
 	}
 
 	if len(changes) > 0 {
 		msg := "updated: " + strings.Join(changes, "; ")
-		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg); err != nil {
+		data := map[string]any{"changes": changed}
+		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
 			return nil, err
 		}
 	}
@@ -407,17 +471,25 @@ func (s *Store) MoveTask(id int64, columnRef string, position *int, actorRef str
 	// Compact source column after move.
 	fromColumn := t.ColumnID
 	fromName := t.ColumnName
+	fromPos := t.Position
 
-	pos := 0
+	var max sql.NullInt64
+	if err := tx.QueryRow(`SELECT MAX(position) FROM tasks WHERE column_id = ? AND id != ?`, col.ID, t.ID).Scan(&max); err != nil {
+		return nil, err
+	}
+	end := 0
+	if max.Valid {
+		end = int(max.Int64) + 1
+	}
+	pos := end
 	if position != nil {
+		// Clamp to [0, end] so explicit positions cannot go negative or leave gaps.
 		pos = *position
-	} else {
-		var max sql.NullInt64
-		if err := tx.QueryRow(`SELECT MAX(position) FROM tasks WHERE column_id = ? AND id != ?`, col.ID, t.ID).Scan(&max); err != nil {
-			return nil, err
+		if pos < 0 {
+			pos = 0
 		}
-		if max.Valid {
-			pos = int(max.Int64) + 1
+		if pos > end {
+			pos = end
 		}
 	}
 
@@ -458,8 +530,12 @@ func (s *Store) MoveTask(id int64, columnRef string, position *int, actorRef str
 		}
 	}
 
+	data := map[string]any{
+		"from": map[string]any{"column": fromName, "column_id": fromColumn, "position": fromPos},
+		"to":   map[string]any{"column": col.Name, "column_id": col.ID, "position": pos},
+	}
 	msg := fmt.Sprintf("moved from %q to %q", fromName, col.Name)
-	if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityMoved, msg); err != nil {
+	if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityMoved, msg, data); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -492,10 +568,20 @@ func (s *Store) DeleteTask(id int64, actorRef string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Log before cascade would remove task_id activity... we keep activity on board after delete can null task?
-	// activity has ON DELETE CASCADE for task_id — so log on board level without task, or delete after logging with board only.
+	// Log at board level (task_id NULL): activity rows with the task's id
+	// would be removed by ON DELETE CASCADE. The data payload carries a full
+	// snapshot of the task's final state.
+	data := map[string]any{"task": taskSnapshot(t)}
 	msg := fmt.Sprintf("deleted task %q (#%d)", t.Title, t.ID)
-	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityDeleted, msg); err != nil {
+	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityDeleted, msg, data); err != nil {
+		return err
+	}
+	// Preserve the task's activity history, which the task_id cascade would
+	// otherwise delete: detach rows by moving the id into the JSON payload.
+	if _, err := tx.Exec(
+		`UPDATE activity SET data = json_set(COALESCE(data, '{}'), '$.task_id', task_id), task_id = NULL WHERE task_id = ?`,
+		t.ID,
+	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM tasks WHERE id = ?`, t.ID); err != nil {
@@ -584,7 +670,7 @@ LEFT JOIN developers d ON d.id = t.assignee_id`
 		return nil, err
 	}
 
-	var out []model.Task
+	out := []model.Task{}
 	for rows.Next() {
 		var t model.Task
 		var assignee sql.NullInt64
@@ -644,11 +730,15 @@ func (s *Store) BoardView(boardRef string) (*model.BoardView, error) {
 	for _, t := range tasks {
 		byCol[t.ColumnID] = append(byCol[t.ColumnID], t)
 	}
-	view := &model.BoardView{Board: *b}
+	view := &model.BoardView{Board: *b, Columns: []model.ColumnWithTasks{}}
 	for _, c := range cols {
+		colTasks := byCol[c.ID]
+		if colTasks == nil {
+			colTasks = []model.Task{}
+		}
 		view.Columns = append(view.Columns, model.ColumnWithTasks{
 			Column: c,
-			Tasks:  byCol[c.ID],
+			Tasks:  colTasks,
 		})
 	}
 	return view, nil
@@ -675,7 +765,7 @@ func (s *Store) CommentTask(id int64, actorRef, message string) (*model.Activity
 		}
 		actorID = &a.ID
 	}
-	return s.AddActivity(&t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityCommented, message)
+	return s.AddActivity(&t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityCommented, message, nil)
 }
 
 func (s *Store) WatchTask(id int64, devRef string) error {
@@ -702,8 +792,9 @@ func (s *Store) WatchTask(id int64, devRef string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
+		data := map[string]any{"developer": d.Username}
 		msg := fmt.Sprintf("%s is now watching", d.Username)
-		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityWatched, msg); err != nil {
+		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityWatched, msg, data); err != nil {
 			return err
 		}
 	}
@@ -734,8 +825,9 @@ func (s *Store) UnwatchTask(id int64, devRef string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
+		data := map[string]any{"developer": d.Username}
 		msg := fmt.Sprintf("%s stopped watching", d.Username)
-		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityUnwatched, msg); err != nil {
+		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityUnwatched, msg, data); err != nil {
 			return err
 		}
 	}

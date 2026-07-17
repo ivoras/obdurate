@@ -34,10 +34,17 @@ func NewRoot() *cobra.Command {
 			if err := app.Print.SetFlags(app.JSON, app.CSV, app.TOON); err != nil {
 				return err
 			}
-			// Skip DB open for pure meta commands.
+			// Skip DB open for pure meta commands, including completion
+			// subcommands (bash/zsh/...) and the hidden __complete command
+			// cobra runs on every shell tab-press.
 			switch cmd.Name() {
-			case "help", "completion", "version":
+			case "help", "version", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
 				return nil
+			}
+			for c := cmd; c != nil; c = c.Parent() {
+				if c.Name() == "completion" {
+					return nil
+				}
 			}
 			// Don't require DB for root alone (shows help)
 			if cmd == cmd.Root() {
@@ -52,7 +59,7 @@ func NewRoot() *cobra.Command {
 				_ = sqlDB.Close()
 			}
 			app.Store = store.New(sqlDB)
-			return nil
+			return app.Store.EnsureDefaults()
 		},
 	}
 

@@ -56,11 +56,11 @@ Conventions:
 | Entity | Notes |
 |--------|--------|
 | Developer | Global; refs: `id` \| email \| username \| slack_id; roles: `admin\|lead\|developer\|viewer` |
-| Project | Multiple boards |
+| Project | Multiple boards. A fresh DB is seeded with project `Default` + board `main` (`store.EnsureDefaults`, called from root.go; only when zero projects exist) |
 | Board | Belongs to project; ref: `id` \| name \| `project/board` |
 | Column | Per-board; default Todo, Doing, Done on create; ordered by `position` |
 | Task | title, description, assignee, priority, tags, watchers, position in column |
-| Activity | Unified stream: created, updated, moved, commented, watched, unwatched, deleted, … |
+| Activity | Unified stream: created, updated, moved, commented, watched, unwatched, deleted, … Each row has a `data` JSON payload (old/new values or snapshots) so state transitions are reconstructible; payload shapes are documented at the top of `internal/store/activity.go` and in README. Deleting a task detaches (does not cascade-delete) its history: `task_id` moves into `data.task_id`. |
 
 Priority: `low|medium|high|critical` (default medium).
 
@@ -85,6 +85,8 @@ Priority: `low|medium|high|critical` (default medium).
 - Embedded at `internal/db/schema.sql` via `//go:embed`
 - Applied on every open (`CREATE TABLE IF NOT EXISTS` / indexes)
 - Foreign keys enabled; cascading deletes for project/board managers
+- Column additions to existing tables need an explicit `ensureColumn` call in
+  `internal/db/db.go` (`CREATE TABLE IF NOT EXISTS` never alters old tables)
 
 ### Output
 

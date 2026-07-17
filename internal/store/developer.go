@@ -96,13 +96,22 @@ func (s *Store) UpdateDeveloper(ref string, u DeveloperUpdate) (*model.Developer
 		return nil, err
 	}
 	if u.Name != nil {
-		d.Name = *u.Name
+		d.Name = strings.TrimSpace(*u.Name)
+		if d.Name == "" {
+			return nil, fmt.Errorf("%w: name cannot be empty", ErrInvalidInput)
+		}
 	}
 	if u.Email != nil {
-		d.Email = *u.Email
+		d.Email = strings.TrimSpace(*u.Email)
+		if d.Email == "" {
+			return nil, fmt.Errorf("%w: email cannot be empty", ErrInvalidInput)
+		}
 	}
 	if u.Username != nil {
-		d.Username = *u.Username
+		d.Username = strings.TrimSpace(*u.Username)
+		if d.Username == "" {
+			return nil, fmt.Errorf("%w: username cannot be empty", ErrInvalidInput)
+		}
 	}
 	if u.SlackID != nil {
 		if *u.SlackID == "" {
@@ -146,7 +155,7 @@ FROM developers ORDER BY username`
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.Developer
+	out := []model.Developer{}
 	for rows.Next() {
 		var d model.Developer
 		var slack sql.NullString

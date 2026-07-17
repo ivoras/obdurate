@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Role string
 
@@ -80,32 +83,35 @@ type Column struct {
 }
 
 type Task struct {
-	ID           int64     `json:"id"`
-	BoardID      int64     `json:"board_id"`
-	ColumnID     int64     `json:"column_id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description,omitempty"`
-	AssigneeID   *int64    `json:"assignee_id,omitempty"`
-	Priority     Priority  `json:"priority"`
-	Position     int       `json:"position"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	BoardID     int64     `json:"board_id"`
+	ColumnID    int64     `json:"column_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	AssigneeID  *int64    `json:"assignee_id,omitempty"`
+	Priority    Priority  `json:"priority"`
+	Position    int       `json:"position"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// hydrated fields
-	ColumnName   string   `json:"column_name,omitempty"`
-	AssigneeRef  string   `json:"assignee,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	WatcherRefs  []string `json:"watchers,omitempty"`
+	ColumnName  string   `json:"column_name,omitempty"`
+	AssigneeRef string   `json:"assignee,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	WatcherRefs []string `json:"watchers,omitempty"`
 }
 
 type Activity struct {
-	ID        int64     `json:"id"`
-	TaskID    *int64    `json:"task_id,omitempty"`
-	ProjectID *int64    `json:"project_id,omitempty"`
-	BoardID   *int64    `json:"board_id,omitempty"`
-	ActorID   *int64    `json:"actor_id,omitempty"`
-	Kind      string    `json:"kind"`
-	Message   string    `json:"message"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64  `json:"id"`
+	TaskID    *int64 `json:"task_id,omitempty"`
+	ProjectID *int64 `json:"project_id,omitempty"`
+	BoardID   *int64 `json:"board_id,omitempty"`
+	ActorID   *int64 `json:"actor_id,omitempty"`
+	Kind      string `json:"kind"`
+	Message   string `json:"message"`
+	// Data holds a structured JSON payload describing the change
+	// (old/new values, snapshots) so state can be reconstructed.
+	Data      json.RawMessage `json:"data,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 	// hydrated
 	ActorRef string `json:"actor,omitempty"`
 }
@@ -123,8 +129,8 @@ const (
 
 // BoardView is a kanban board snapshot grouped by column.
 type BoardView struct {
-	Board   Board              `json:"board"`
-	Columns []ColumnWithTasks  `json:"columns"`
+	Board   Board             `json:"board"`
+	Columns []ColumnWithTasks `json:"columns"`
 }
 
 type ColumnWithTasks struct {

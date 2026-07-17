@@ -2,28 +2,96 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"obdurate/internal/model"
 )
 
-func (s *Store) addActivityTx(tx *sql.Tx, taskID, projectID, boardID, actorID *int64, kind, message string) error {
+// Activity data payload shapes, by kind:
+//
+//	created:   {"task": <task snapshot>}
+//	updated:   {"changes": {"<field>": {"old": ..., "new": ...}, ...}}
+//	moved:     {"from": {"column": ..., "column_id": ..., "position": ...},
+//	            "to":   {"column": ..., "column_id": ..., "position": ...}}
+//	deleted:   {"task": <task snapshot>}         (state just before deletion)
+//	watched:   {"developer": <username>}
+//	unwatched: {"developer": <username>}
+//	commented: no payload (message is the comment text)
+//
+// A task snapshot is: {"id", "title", "description", "column", "column_id",
+// "priority", "position", "assignee" (username or null), "tags", "watchers"}.
+
+// taskSnapshot captures the externally meaningful state of a task for
+// activity payloads (created/deleted), enough to reconstruct it.
+func taskSnapshot(t *model.Task) map[string]any {
+	var assignee any
+	if t.AssigneeRef != "" {
+		assignee = t.AssigneeRef
+	}
+	tags := t.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	watchers := t.WatcherRefs
+	if watchers == nil {
+		watchers = []string{}
+	}
+	return map[string]any{
+		"id":          t.ID,
+		"title":       t.Title,
+		"description": t.Description,
+		"column":      t.ColumnName,
+		"column_id":   t.ColumnID,
+		"priority":    string(t.Priority),
+		"position":    t.Position,
+		"assignee":    assignee,
+		"tags":        tags,
+		"watchers":    watchers,
+	}
+}
+
+// fieldChange is the {"old": ..., "new": ...} element of an "updated" payload.
+func fieldChange(old, new any) map[string]any {
+	return map[string]any{"old": old, "new": new}
+}
+
+func marshalActivityData(data any) (any, error) {
+	if data == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("marshal activity data: %w", err)
+	}
+	return string(b), nil
+}
+
+func (s *Store) addActivityTx(tx *sql.Tx, taskID, projectID, boardID, actorID *int64, kind, message string, data any) error {
+	payload, err := marshalActivityData(data)
+	if err != nil {
+		return err
+	}
 	ts := now()
-	_, err := tx.Exec(
-		`INSERT INTO activity (task_id, project_id, board_id, actor_id, kind, message, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		taskID, projectID, boardID, actorID, kind, message, ts,
+	_, err = tx.Exec(
+		`INSERT INTO activity (task_id, project_id, board_id, actor_id, kind, message, data, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		taskID, projectID, boardID, actorID, kind, message, payload, ts,
 	)
 	return err
 }
 
-func (s *Store) AddActivity(taskID, projectID, boardID, actorID *int64, kind, message string) (*model.Activity, error) {
+func (s *Store) AddActivity(taskID, projectID, boardID, actorID *int64, kind, message string, data any) (*model.Activity, error) {
+	payload, err := marshalActivityData(data)
+	if err != nil {
+		return nil, err
+	}
 	ts := now()
 	res, err := s.db.Exec(
-		`INSERT INTO activity (task_id, project_id, board_id, actor_id, kind, message, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		taskID, projectID, boardID, actorID, kind, message, ts,
+		`INSERT INTO activity (task_id, project_id, board_id, actor_id, kind, message, data, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		taskID, projectID, boardID, actorID, kind, message, payload, ts,
 	)
 	if err != nil {
 		return nil, err
@@ -37,16 +105,17 @@ func (s *Store) AddActivity(taskID, projectID, boardID, actorID *int64, kind, me
 
 func (s *Store) GetActivity(id int64) (*model.Activity, error) {
 	const q = `
-SELECT a.id, a.task_id, a.project_id, a.board_id, a.actor_id, a.kind, a.message, a.created_at,
+SELECT a.id, a.task_id, a.project_id, a.board_id, a.actor_id, a.kind, a.message, a.data, a.created_at,
        COALESCE(d.username, '')
 FROM activity a
 LEFT JOIN developers d ON d.id = a.actor_id
 WHERE a.id = ?`
 	var a model.Activity
 	var taskID, projectID, boardID, actorID sql.NullInt64
+	var data sql.NullString
 	var created, actor string
 	err := s.db.QueryRow(q, id).Scan(
-		&a.ID, &taskID, &projectID, &boardID, &actorID, &a.Kind, &a.Message, &created, &actor,
+		&a.ID, &taskID, &projectID, &boardID, &actorID, &a.Kind, &a.Message, &data, &created, &actor,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -58,6 +127,9 @@ WHERE a.id = ?`
 	a.ProjectID = int64Ptr(projectID)
 	a.BoardID = int64Ptr(boardID)
 	a.ActorID = int64Ptr(actorID)
+	if data.Valid && data.String != "" {
+		a.Data = json.RawMessage(data.String)
+	}
 	a.CreatedAt = parseTime(created)
 	a.ActorRef = actor
 	return &a, nil
@@ -97,7 +169,7 @@ func (s *Store) ListActivity(f ActivityFilter) ([]model.Activity, error) {
 	}
 
 	q := `
-SELECT a.id, a.task_id, a.project_id, a.board_id, a.actor_id, a.kind, a.message, a.created_at,
+SELECT a.id, a.task_id, a.project_id, a.board_id, a.actor_id, a.kind, a.message, a.data, a.created_at,
        COALESCE(d.username, '')
 FROM activity a
 LEFT JOIN developers d ON d.id = a.actor_id`
@@ -120,13 +192,14 @@ LEFT JOIN developers d ON d.id = a.actor_id`
 	}
 	defer rows.Close()
 
-	var out []model.Activity
+	out := []model.Activity{}
 	for rows.Next() {
 		var a model.Activity
 		var taskID, projectID, boardID, actorID sql.NullInt64
+		var data sql.NullString
 		var created, actor string
 		if err := rows.Scan(
-			&a.ID, &taskID, &projectID, &boardID, &actorID, &a.Kind, &a.Message, &created, &actor,
+			&a.ID, &taskID, &projectID, &boardID, &actorID, &a.Kind, &a.Message, &data, &created, &actor,
 		); err != nil {
 			return nil, err
 		}
@@ -134,6 +207,9 @@ LEFT JOIN developers d ON d.id = a.actor_id`
 		a.ProjectID = int64Ptr(projectID)
 		a.BoardID = int64Ptr(boardID)
 		a.ActorID = int64Ptr(actorID)
+		if data.Valid && data.String != "" {
+			a.Data = json.RawMessage(data.String)
+		}
 		a.CreatedAt = parseTime(created)
 		a.ActorRef = actor
 		out = append(out, a)

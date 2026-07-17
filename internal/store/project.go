@@ -2,12 +2,35 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"obdurate/internal/model"
 )
+
+// EnsureDefaults seeds a "Default" project with a "main" board (and the
+// standard Todo/Doing/Done columns) when the database contains no projects
+// at all. Called on startup so unspecified tasks always have a home; a
+// deliberately deleted Default project is not recreated once other projects
+// exist.
+func (s *Store) EnsureDefaults() error {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM projects`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := s.CreateProject("Default", "Default project"); err != nil && !errors.Is(err, ErrAlreadyExists) {
+		return err
+	}
+	if _, err := s.CreateBoard("Default", "main", "Default board"); err != nil && !errors.Is(err, ErrAlreadyExists) {
+		return err
+	}
+	return nil
+}
 
 func (s *Store) CreateProject(name, description string) (*model.Project, error) {
 	name = strings.TrimSpace(name)
@@ -109,7 +132,7 @@ func (s *Store) ListProjects() ([]model.Project, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.Project
+	out := []model.Project{}
 	for rows.Next() {
 		var p model.Project
 		var created, updated string

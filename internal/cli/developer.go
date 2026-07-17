@@ -12,8 +12,8 @@ import (
 
 func newDeveloperCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "developer",
-		Short: "Manage developers",
+		Use:     "developer",
+		Short:   "Manage developers",
 		Aliases: []string{"dev", "user"},
 	}
 	cmd.AddCommand(

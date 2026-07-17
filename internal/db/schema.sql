@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS activity (
     actor_id   INTEGER REFERENCES developers(id) ON DELETE SET NULL,
     kind       TEXT    NOT NULL,
     message    TEXT    NOT NULL,
+    data       TEXT,   -- JSON payload with structured old/new state, see store/activity.go
     created_at TEXT    NOT NULL
 );
 

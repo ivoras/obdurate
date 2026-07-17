@@ -219,8 +219,8 @@ func printBoard(app *App, b *model.Board) error {
 
 func newColumnCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "column",
-		Short: "Manage board columns",
+		Use:     "column",
+		Short:   "Manage board columns",
 		Aliases: []string{"col"},
 	}
 	cmd.AddCommand(
