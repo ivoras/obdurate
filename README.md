@@ -85,8 +85,13 @@ Developer (global) ← assigned to / watches tasks
 Activity (unified stream of events + comments)
 ```
 
+- **Project and board names are slugs**: lowercase ASCII letters, digits,
+  `-` or `_`, starting and ending with a letter or digit, max 64 chars.
+  Input is lowercased automatically (`--name Widget` → `widget`); names with
+  spaces or other characters are rejected. Put human-readable titles in
+  `--description`. (Column names and task titles are free-form.)
 - **Default project**: a brand-new database is seeded with a project named
-  `Default` containing a board `main` (with the standard columns), so tasks
+  `default` containing a board `main` (with the standard columns), so tasks
   can be created immediately without any setup. It is an ordinary project —
   rename or delete it freely; it is only re-seeded when the database has no
   projects at all.

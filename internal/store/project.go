@@ -23,19 +23,19 @@ func (s *Store) EnsureDefaults() error {
 	if n > 0 {
 		return nil
 	}
-	if _, err := s.CreateProject("Default", "Default project"); err != nil && !errors.Is(err, ErrAlreadyExists) {
+	if _, err := s.CreateProject("default", "Default project"); err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return err
 	}
-	if _, err := s.CreateBoard("Default", "main", "Default board"); err != nil && !errors.Is(err, ErrAlreadyExists) {
+	if _, err := s.CreateBoard("default", "main", "Default board"); err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return err
 	}
 	return nil
 }
 
 func (s *Store) CreateProject(name, description string) (*model.Project, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("%w: project name is required", ErrInvalidInput)
+	name, err := normalizeSlug(name, "project")
+	if err != nil {
+		return nil, err
 	}
 	ts := now()
 	const q = `INSERT INTO projects (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)`
@@ -99,9 +99,9 @@ func (s *Store) UpdateProject(ref string, u ProjectUpdate) (*model.Project, erro
 		return nil, err
 	}
 	if u.Name != nil {
-		p.Name = strings.TrimSpace(*u.Name)
-		if p.Name == "" {
-			return nil, fmt.Errorf("%w: project name cannot be empty", ErrInvalidInput)
+		p.Name, err = normalizeSlug(*u.Name, "project")
+		if err != nil {
+			return nil, err
 		}
 	}
 	if u.Description != nil {

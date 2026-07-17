@@ -37,17 +37,32 @@ commands with the Bash tool and reading their output.
 
 ## The Default project
 
-Every fresh database is seeded with a project named `Default` containing a
+Every fresh database is seeded with a project named `default` containing a
 board named `main` (columns Todo / Doing / Done).
 
 - **When the user does not say which project or board a new task/issue
-  belongs to, create it on `Default/main`** — do not ask, just mention it in
-  your confirmation ("...added to the Default project").
-- If `Default/main` turns out not to exist (someone deleted it), recreate
-  what is missing: `project create --name Default`, then
-  `board create --project Default --name main`.
+  belongs to, create it on `default/main`** — do not ask, just mention it in
+  your confirmation ("...added to the default project").
+- If `default/main` turns out not to exist (someone deleted it), recreate
+  what is missing: `project create --name default`, then
+  `board create --project default --name main`.
 - If the user names a project but no board, and that project has exactly one
   board, use it; if it has several, ask which one.
+
+## Project and board names are slugs
+
+Project and board names must be lowercase ASCII slugs: letters, digits, `-`
+or `_`, starting and ending with a letter or digit, max 64 characters. `obd`
+lowercases input itself but REJECTS names with spaces or other characters
+(exit 3).
+
+- When the user gives a human title ("create a project called My Cool App"),
+  derive the slug yourself (`my-cool-app`: lowercase, spaces → `-`, drop
+  other characters) and keep the original title in `--description`:
+  `project create --name my-cool-app --description "My Cool App"`.
+  Tell the user the slug you chose.
+- References are case-insensitive, so `Widget` finds the project `widget`.
+- Column names and task titles are NOT slugs — they are free-form text.
 
 ## Rules that prevent mistakes
 
@@ -86,7 +101,7 @@ board named `main` (columns Todo / Doing / Done).
 
 | The user says | You run |
 |---|---|
-| "add a task/ticket/card/issue/todo X" | `task create --board <project/board> --title "X"` (no project mentioned → board `Default/main`) |
+| "add a task/ticket/card/issue/todo X" | `task create --board <project/board> --title "X"` (no project mentioned → board `default/main`) |
 | "mark X done", "move X to done", "finish X" | `task move <id> --column Done` |
 | "start X", "X is in progress" | `task move <id> --column Doing` |
 | "assign X to NAME" | `task update <id> --assignee <ref>` |
@@ -118,7 +133,7 @@ task. Model developer-workflow requests like this:
 - **"Create an issue for project X and user Y"** (or "...assign it to Y"):
   1. Resolve project X (`project get X --json`; if missing, ask before
      creating it). Pick its board (sole board, or ask; no project given →
-     `Default/main`).
+     `default/main`).
   2. Resolve user Y against `developer list --json`. If Y has no developer
      record, ask for name/email/username and create one.
   3. `task create --board <project/board> --title "..." --assignee <Y>

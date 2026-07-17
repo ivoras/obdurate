@@ -18,7 +18,7 @@ mkdir -p "$OPENCLAW_ROOT/obdurate"
 
 The database will live at `$OPENCLAW_ROOT/obdurate/obdurate.db`. It is
 created automatically on first use — no init step is needed — and comes
-pre-seeded with a project named `Default` (board `main`) that receives tasks
+pre-seeded with a project named `default` (board `main`) that receives tasks
 whose project the user does not specify.
 
 ## 2. Install the `obd` executable

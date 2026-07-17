@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -56,6 +57,27 @@ func int64Ptr(ni sql.NullInt64) *int64 {
 	}
 	v := ni.Int64
 	return &v
+}
+
+var slugRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$`)
+
+const maxSlugLen = 64
+
+// normalizeSlug trims, lowercases, and validates a project/board name.
+// Valid slugs are lowercase ASCII letters, digits, '-' or '_', starting and
+// ending with a letter or digit, at most maxSlugLen characters.
+func normalizeSlug(name, what string) (string, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return "", fmt.Errorf("%w: %s name is required", ErrInvalidInput, what)
+	}
+	if len(name) > maxSlugLen {
+		return "", fmt.Errorf("%w: %s name is longer than %d characters", ErrInvalidInput, what, maxSlugLen)
+	}
+	if !slugRe.MatchString(name) {
+		return "", fmt.Errorf("%w: %s name %q must be a slug: lowercase letters, digits, '-' or '_', starting and ending with a letter or digit", ErrInvalidInput, what, name)
+	}
+	return name, nil
 }
 
 func isUniqueViolation(err error) bool {

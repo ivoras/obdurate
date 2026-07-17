@@ -31,15 +31,21 @@ conflict · `1` other.
 Email and username are unique (case-insensitive). Roles are informational
 only — they grant or restrict nothing.
 
-A brand-new database is auto-seeded with a project `Default` containing a
+A brand-new database is auto-seeded with a project `default` containing a
 board `main` — the fallback target for tasks created without an explicit
 project. It is ordinary and only re-seeded when zero projects exist.
+
+**Slug rule** (projects and boards): names are lowercase ASCII slugs —
+letters, digits, `-` or `_`, must start and end with a letter or digit, max
+64 chars. Uppercase input is lowercased automatically; anything else (spaces,
+`/`, unicode) is rejected with exit 3. Column names and task titles are
+free-form.
 
 ## project (alias: proj)
 
 | Command | Flags |
 |---|---|
-| `project create` | `--name` (req, unique case-insensitive), `--description` |
+| `project create` | `--name` (req, unique, slug), `--description` |
 | `project list` | — |
 | `project get <ref>` | — |
 | `project update <ref>` | `--name`, `--description` |
@@ -49,7 +55,7 @@ project. It is ordinary and only re-seeded when zero projects exist.
 
 | Command | Flags |
 |---|---|
-| `board create` | `--project` (req), `--name` (req, unique within project), `--description`. Seeds columns Todo, Doing, Done |
+| `board create` | `--project` (req), `--name` (req, unique within project, slug), `--description`. Seeds columns Todo, Doing, Done |
 | `board list` | `--project` (optional filter) |
 | `board get <ref>` | — |
 | `board update <ref>` | `--name`, `--description` |

@@ -16,9 +16,9 @@ func (s *Store) CreateBoard(projectRef, name, description string) (*model.Board,
 	if err != nil {
 		return nil, err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("%w: board name is required", ErrInvalidInput)
+	name, err = normalizeSlug(name, "board")
+	if err != nil {
+		return nil, err
 	}
 
 	tx, err := s.db.Begin()
@@ -142,9 +142,9 @@ func (s *Store) UpdateBoard(ref string, u BoardUpdate) (*model.Board, error) {
 		return nil, err
 	}
 	if u.Name != nil {
-		b.Name = strings.TrimSpace(*u.Name)
-		if b.Name == "" {
-			return nil, fmt.Errorf("%w: board name cannot be empty", ErrInvalidInput)
+		b.Name, err = normalizeSlug(*u.Name, "board")
+		if err != nil {
+			return nil, err
 		}
 	}
 	if u.Description != nil {
