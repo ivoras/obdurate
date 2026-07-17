@@ -203,4 +203,4 @@ Generate shell completion scripts (`obd completion --help`).
 
 ## License
 
-Use and modify as needed for your environment.
+[BSD 2-Clause License](LICENSE) (Simplified BSD). Copyright (c) 2026 Ivan Voras.
