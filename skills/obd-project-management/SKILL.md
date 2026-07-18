@@ -10,7 +10,8 @@ description: >
   "add a team member", "what happened on the project", "show recent activity",
   "rename the column", "tag this as urgent", "delete that task", or "export
   the tasks". Also use it when the user mentions kanban, backlog, sprint
-  boards, task priorities, or task assignment and a local obd database exists.
+  boards, lists/lanes/stages on a board, task priorities, or task assignment
+  and a local obd database exists.
 ---
 
 # Managing projects with the obd CLI
@@ -18,6 +19,34 @@ description: >
 `obd` is a local CLI kanban tool. All state lives in one SQLite file. There is
 no authentication and no server: you perform every action by running `obd`
 commands with the Bash tool and reading their output.
+
+## Data model — how everything nests
+
+```
+Project ──> Board(s) ──> Column(s) ──> Task(s)
+Developer (global; assigned to / watching tasks anywhere)
+Activity  (global event stream; rows point at task/board/project)
+```
+
+- A **project** contains any number of **boards** (a board often represents a
+  sprint or a workstream).
+- A **board** contains ordered **columns** — what other tools call *lists*,
+  *lanes*, or *stages*. New boards start with Todo / Doing / Done. A column
+  belongs to exactly one board; two boards never share columns.
+- A **task** (= ticket / issue / card) lives on exactly one board, in exactly
+  one of that board's columns, at a position within the column.
+- Tasks **CAN move freely between columns/lists of their own board** — that
+  is the normal kanban flow (`task move <id> --column Doing`). Tasks can
+  **NEVER move to a different board** — to "move" one across boards,
+  recreate it on the target board and delete the original.
+- **Developers** are global, not members of any project: anyone can be
+  assigned to or watch any task in any project.
+- **Tags** are global labels shared across all tasks.
+- **Activity** is one global stream; entries reference the task, board, and
+  project they concern, so it can be filtered at any level.
+
+So: to create a task you need a board (hence `--board project/board`); to
+create a board you need a project; columns only make sense within one board.
 
 ## Step 0 — locate the binary and the database (do this once per session)
 

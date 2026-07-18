@@ -8,6 +8,12 @@ human-readable table).
 Exit codes: `0` OK · `2` not found · `3` invalid input / already exists /
 conflict · `1` other.
 
+Data model: a **project** contains **boards**; a board contains ordered
+**columns** (a.k.a. lists/lanes; default Todo/Doing/Done); a **task** sits in
+exactly one column of exactly one board. **Developers** and **tags** are
+global. Tasks move freely between the columns/lists of their own board
+(`task move`), but never between boards — recreate and delete instead.
+
 ## Reference forms
 
 - **Developer ref**: numeric id | email | username | Slack id (case-insensitive).
