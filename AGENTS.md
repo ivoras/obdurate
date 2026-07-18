@@ -120,8 +120,25 @@ When the user asks to ship/release:
 
 1. Ensure working tree is clean and default branch matches remote tip
 2. Create annotated tag `vX.Y.Z` and push `origin vX.Y.Z`
-3. Do not force-push tags; do not invent changelog unless asked
+3. Do not force-push tags
 4. Prefer `gh` to show release/Actions status if available
+5. **After CI creates the release, write its description from the commit
+   messages that make up the release** (see below)
+
+### Release descriptions (mandatory)
+
+Every release gets a description generated from the commits between the
+previous tag and this one — do this every time a release is created:
+
+1. Collect them: `git log --reverse previous-tag..vX.Y.Z` (full messages,
+   not just subjects; for the first release, from the repo root).
+2. Write a short prose summary grouped by theme (features / fixes / docs),
+   derived only from those commit messages — do not invent items that are
+   not in the commits. Subject lines map to bullets; commit bodies supply
+   the detail worth surfacing.
+3. Apply it: `gh release edit vX.Y.Z --notes-file <file>` once the CI-created
+   release exists (CI's auto-generated notes are only a placeholder). Keep
+   the auto-generated "Full Changelog" compare link at the bottom.
 
 Keep README **Releases (CI)** section in sync if the workflow or assets change.
 
