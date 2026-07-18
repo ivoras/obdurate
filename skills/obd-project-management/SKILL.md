@@ -194,6 +194,15 @@ task. Model developer-workflow requests like this:
   3. `task create --board <project/board> --title "..." --assignee <Y>
      --by <actor>` — include `--description`, `--priority`, `--tags` when
      the user gave that information.
+- **Pull request context**: if the discussion that leads to creating a task
+  mentions a PR (a pull/merge request id, number, or URL — "PR #123",
+  "!45", a github.com/.../pull/123 link), record that reference in the
+  task's `--description` (e.g. `--description "Fix header parsing. PR:
+  #123"`). Same when a PR comes up later for an existing task: append it to
+  the description with `task update <id> --description "<existing text>
+  PR: #123"` — read the current description first (`task get <id> --json`)
+  and keep it; `--description` replaces the whole field. There is no
+  dedicated PR field, so the description is where PR links live.
 - **"File a bug: ..."** — a task tagged `bug`: include `--tags bug` (plus
   any other tags) and put reproduction details in `--description`. Severity
   words map to priority: "blocker/critical" → `critical`, "major/serious" →
