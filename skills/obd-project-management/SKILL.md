@@ -255,7 +255,10 @@ describing the change, so you can answer "what did this look like before?":
 
 To reconstruct a task's state at a point in time: start from the `created`
 snapshot, then apply each later `updated`/`moved` entry's new values in
-chronological order (entries are returned newest-first — reverse them).
+chronological order. Activity is ALWAYS returned newest-first and there is
+no sort flag — reverse it yourself (e.g. `--json | jq 'reverse'`), and
+remember `--limit N` keeps the N most recent entries, so raise it if you
+need history back to the `created` event.
 
 ## Reporting back to the user
 

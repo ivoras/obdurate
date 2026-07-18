@@ -109,6 +109,13 @@ project activity streams with the id in `data.task_id`).
 `activity [--board REF] [--project REF] [--task ID] [--limit N]` — unified
 stream, newest first (default limit 50, max 1000).
 
+Sorting is FIXED: always newest-first (`created_at` desc, id desc as
+tiebreaker) — there is no sort/order flag on any command. Consequently
+`--limit N` returns the N MOST RECENT entries; the oldest entries of a long
+history are only reachable by raising `--limit`. For chronological order,
+reverse client-side (e.g. `--json | jq 'reverse'`). Other listings are fixed
+too: tasks by board/column/position, everything else by name.
+
 Activity JSON fields: `id`, `task_id`, `project_id`, `board_id`, `actor_id`,
 `actor` (username), `kind`, `message`, `data`, `created_at`.
 
