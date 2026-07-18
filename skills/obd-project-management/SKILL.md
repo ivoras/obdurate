@@ -48,6 +48,30 @@ Activity  (global event stream; rows point at task/board/project)
 So: to create a task you need a board (hence `--board project/board`); to
 create a board you need a project; columns only make sense within one board.
 
+## Task lifecycle
+
+A task has NO status field — **the column it sits in IS its state**. The
+whole lifecycle is:
+
+1. **Created** (`task create`): lands in the named column, or the board's
+   FIRST column (usually Todo) by default, appended last; priority defaults
+   to `medium`.
+2. **Worked on**: moved between its board's columns (`task move`), fields
+   updated (`task update`), commented on, watched. Every change is recorded
+   in the activity stream with old/new values.
+3. **"Done"**: purely a convention — moving the task to the `Done` column.
+   Nothing is locked; "reopen" just means moving it back out. Never invent a
+   closed/archived status that isn't a column on the board.
+4. **Deleted** (`task delete`): permanent — the task cannot be restored, so
+   confirm first. Its history is NOT lost though: all its activity entries
+   remain in the board/project streams (with the id preserved in
+   `data.task_id`), and the `deleted` entry snapshots its final state. After
+   deletion, `task activity <id>` finds nothing — use `activity --board ...`.
+
+Side effects to know: deleting a developer only unassigns/unwatches their
+tasks (never deletes them); deleting a board or project deletes all tasks in
+it (history again preserved one level up).
+
 ## Step 0 — locate the binary and the database (do this once per session)
 
 1. **Binary**: try `obd version`. If not on PATH, look for `./obd` in the

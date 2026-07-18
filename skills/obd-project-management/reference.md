@@ -99,6 +99,11 @@ Task JSON fields: `id`, `board_id`, `column_id`, `column_name`, `title`,
 `description`, `priority`, `position`, `assignee` (username), `assignee_id`,
 `tags`, `watchers`, `created_at`, `updated_at`.
 
+Lifecycle: created (into first column by default) → moved between columns
+(the column is the task's only status; Done is a convention, not a lock) →
+optionally deleted (permanent; history survives detached in the board/
+project activity streams with the id in `data.task_id`).
+
 ## activity
 
 `activity [--board REF] [--project REF] [--task ID] [--limit N]` — unified
