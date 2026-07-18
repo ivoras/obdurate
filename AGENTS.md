@@ -140,6 +140,20 @@ previous tag and this one — do this every time a release is created:
    release exists (CI's auto-generated notes are only a placeholder). Keep
    the auto-generated "Full Changelog" compare link at the bottom.
 
+### Release code names (mandatory)
+
+Every release gets a unique, whimsical **code name derived from the works of
+Stephen King** (a novel, novella, or story title), chosen to relate to the
+release description — e.g. a first release might be *Carrie* (King's first
+novel), a release about preserving deleted history *Pet Sematary*.
+
+1. Pick a work whose title or theme echoes the release's content; a one-line
+   justification in the release notes is welcome but optional.
+2. Uniqueness: never reuse a name — check `gh release list` first.
+3. Set the release title to `vX.Y.Z - <code name>`:
+   `gh release edit vX.Y.Z --title "vX.Y.Z - <code name>"`
+   (do this together with applying the release description).
+
 Keep README **Releases (CI)** section in sync if the workflow or assets change.
 
 ## Build & verification
