@@ -24,10 +24,15 @@ func New(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
+// now returns the current UTC time as a fixed-width RFC3339 string with
+// second granularity (e.g. "2026-07-18T09:08:43Z", always 20 chars), so
+// lexicographic order equals chronological order.
 func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
+	return time.Now().UTC().Format(time.RFC3339)
 }
 
+// parseTime accepts both the current second-granularity format and the
+// fractional-second RFC3339Nano strings written by older versions.
 func parseTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {

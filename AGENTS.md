@@ -152,7 +152,9 @@ After meaningful CLI changes, do a short smoke path:
 - Do not commit secrets or databases (`db/`, `*.db` are gitignored).
 - Prefer small, focused commits if the user asks to commit.
 - IDs are int64 SQLite rowids.
-- Times stored as UTC RFC3339Nano strings.
+- Times stored as fixed-width UTC RFC3339 strings, second granularity
+  (`2006-01-02T15:04:05Z`) — lexicographic order == chronological order.
+  `parseTime` still reads legacy RFC3339Nano values from older databases.
 
 ## Out of scope (unless explicitly requested)
 

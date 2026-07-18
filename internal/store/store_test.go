@@ -54,6 +54,23 @@ func intPtr(i int) *int                      { return &i }
 func strP(s string) *string                  { return &s }
 func prioP(p model.Priority) *model.Priority { return &p }
 
+func TestNowFixedWidthSecondGranularity(t *testing.T) {
+	s := now()
+	if len(s) != 20 || !strings.HasSuffix(s, "Z") {
+		t.Errorf("now() = %q, want fixed-width 20-char UTC RFC3339 ending in Z", s)
+	}
+	if strings.Contains(s, ".") {
+		t.Errorf("now() = %q contains fractional seconds", s)
+	}
+	if parseTime(s).IsZero() {
+		t.Errorf("now() = %q does not round-trip through parseTime", s)
+	}
+	// Legacy fractional-second values from older databases still parse.
+	if parseTime("2026-01-02T03:04:05.678901234Z").IsZero() {
+		t.Error("legacy RFC3339Nano value no longer parses")
+	}
+}
+
 func TestNormalizeSlug(t *testing.T) {
 	valid := map[string]string{
 		"widget":       "widget",
