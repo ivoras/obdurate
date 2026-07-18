@@ -81,8 +81,9 @@ lowercases input itself but REJECTS names with spaces or other characters
   id, case-insensitively. Prefer usernames. If a name like "Alice" is given,
   run `obd --db <path> developer list --json` and match against `name`,
   `username`, and `email`; ask the user if more than one candidate matches.
-- **Pass `--by <actor>`** on task create/update/move/delete/comment whenever
-  you know who is acting (the user's identity or whoever they say is acting).
+- **Pass `--by <actor>`** on every mutating command — task, project, board,
+  and column create/update/move/delete/comment all accept it — whenever you
+  know who is acting (the user's identity or whoever they say is acting).
   This attributes the activity-log entry. If you don't know, omit it.
 - **`--tags` REPLACES the whole tag list.** To add one tag: first `task get
   <id> --json`, take the existing `tags` array, append the new tag, and pass
@@ -109,7 +110,8 @@ lowercases input itself but REJECTS names with spaces or other characters
 | "make X urgent / high priority" | `task update <id> --priority high` (or `critical`) |
 | "tag X as Y" | read current tags, then `task update <id> --tags "<old...,Y>"` |
 | "comment on X: ..." | `task comment <id> --message "..." --by <actor>` |
-| "what's on my plate", "my tasks", "NAME's tasks" | `task mine --assignee <ref> --json` |
+| "what's on my plate", "my tasks", "NAME's tasks" | `developer tasks <ref> --json` |
+| "everything in project X", "all X tasks" | `project tasks <ref> --json` |
 | "show the board", "how is the sprint going" | `board show <project/board>` |
 | "who's working on what" | `task list --board <project/board> --json`, group by `assignee` |
 | "what happened recently / on project X" | `activity --project <ref> --json` |

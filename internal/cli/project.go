@@ -22,17 +22,33 @@ func newProjectCmd(app *App) *cobra.Command {
 		projectGet(app),
 		projectUpdate(app),
 		projectDelete(app),
+		projectTasks(app),
 	)
 	return cmd
 }
 
+func projectTasks(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tasks <ref>",
+		Short: "List all tasks in a project (all its boards)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			list, err := app.Store.ListTasks(store.TaskFilter{ProjectRef: args[0]})
+			if err != nil {
+				return err
+			}
+			return printTaskList(app, list)
+		},
+	}
+}
+
 func projectCreate(app *App) *cobra.Command {
-	var name, description string
+	var name, description, by string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a project",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := app.Store.CreateProject(name, description)
+			p, err := app.Store.CreateProject(name, description, by)
 			if err != nil {
 				return err
 			}
@@ -41,6 +57,7 @@ func projectCreate(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "project name (required)")
 	cmd.Flags().StringVar(&description, "description", "", "description")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -84,13 +101,13 @@ func projectGet(app *App) *cobra.Command {
 }
 
 func projectUpdate(app *App) *cobra.Command {
-	var name, description string
+	var name, description, by string
 	cmd := &cobra.Command{
 		Use:   "update <ref>",
 		Short: "Update a project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			u := store.ProjectUpdate{}
+			u := store.ProjectUpdate{ActorRef: by}
 			if cmd.Flags().Changed("name") {
 				u.Name = &name
 			}
@@ -106,16 +123,18 @@ func projectUpdate(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "new name")
 	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	return cmd
 }
 
 func projectDelete(app *App) *cobra.Command {
-	return &cobra.Command{
+	var by string
+	cmd := &cobra.Command{
 		Use:   "delete <ref>",
 		Short: "Delete a project and all boards/tasks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := app.Store.DeleteProject(args[0]); err != nil {
+			if err := app.Store.DeleteProject(args[0], by); err != nil {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted project %s", args[0]))
@@ -125,6 +144,8 @@ func projectDelete(app *App) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
+	return cmd
 }
 
 func printProject(app *App, p *model.Project) error {

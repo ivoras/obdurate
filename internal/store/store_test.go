@@ -39,11 +39,11 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("create bob: %v", err)
 	}
-	p, err := s.CreateProject("p1", "test project")
+	p, err := s.CreateProject("p1", "test project", "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	b, err := s.CreateBoard("p1", "b1", "test board")
+	b, err := s.CreateBoard("p1", "b1", "test board", "")
 	if err != nil {
 		t.Fatalf("create board: %v", err)
 	}

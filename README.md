@@ -115,6 +115,7 @@ Activity (unified stream of events + comments)
 | `developer get <ref>` | Get by id, email, username, or slack-id |
 | `developer update <ref>` | Update fields |
 | `developer delete <ref>` | Delete developer |
+| `developer tasks <ref>` | List all tasks assigned to the developer |
 
 **create flags:** `--name` (req), `--email` (req), `--username` (req), `--slack-id`, `--role` (default `developer`)
 
@@ -124,32 +125,33 @@ Activity (unified stream of events + comments)
 
 | Command | Description |
 |---------|-------------|
-| `project create` | Create project (`--name`, `--description`) |
+| `project create` | Create project (`--name`, `--description`, `--by`) |
 | `project list` | List projects |
 | `project get <ref>` | Get by id or name |
-| `project update <ref>` | Update (`--name`, `--description`) |
-| `project delete <ref>` | Delete project and all boards/tasks |
+| `project update <ref>` | Update (`--name`, `--description`, `--by`) |
+| `project delete <ref>` | Delete project and all boards/tasks (`--by`) |
+| `project tasks <ref>` | List all tasks in the project (all its boards) |
 
 ### `obd board`
 
 | Command | Description |
 |---------|-------------|
-| `board create` | Create board (`--project`, `--name`, `--description`); seeds Todo/Doing/Done |
+| `board create` | Create board (`--project`, `--name`, `--description`, `--by`); seeds Todo/Doing/Done |
 | `board list` | List boards (`--project` optional filter) |
 | `board get <ref>` | Get by id, name, or `project/name` |
-| `board update <ref>` | Update (`--name`, `--description`) |
-| `board delete <ref>` | Delete board |
+| `board update <ref>` | Update (`--name`, `--description`, `--by`) |
+| `board delete <ref>` | Delete board (`--by`) |
 | `board show <ref>` | Kanban view grouped by column |
 
 ### `obd column` (alias: `col`)
 
 | Command | Description |
 |---------|-------------|
-| `column add` | Add column (`--board`, `--name`, `--position`) |
+| `column add` | Add column (`--board`, `--name`, `--position`, `--by`) |
 | `column list` | List columns (`--board`) |
-| `column rename <column>` | Rename (`--board`, `--name`) |
-| `column reorder <column>` | Reorder (`--board`, `--position`) |
-| `column delete <column>` | Delete empty column (`--board`) |
+| `column rename <column>` | Rename (`--board`, `--name`, `--by`) |
+| `column reorder <column>` | Reorder (`--board`, `--position`, `--by`) |
+| `column delete <column>` | Delete empty column (`--board`, `--by`) |
 
 ### `obd task`
 
@@ -183,9 +185,13 @@ List activity / comments globally with filters:
 
 #### Activity `data` payloads
 
-Every non-comment activity row carries a `data` JSON field (visible in
-`--json`/`--toon` output) with structured old/new state, so previous and next
-task state can be reconstructed from the stream:
+Every mutating operation — on tasks, projects, boards, columns, and
+developers — is logged. Non-comment rows carry a `data` JSON field (visible
+in `--json`/`--toon` output) with structured old/new state, so previous and
+next state can be reconstructed from the stream. Payloads name the affected
+object in `data.entity` (`task`, `project`, `board`, `column`, `developer`).
+
+Task payloads, by kind:
 
 | Kind | Payload |
 |------|---------|
@@ -199,9 +205,21 @@ task state can be reconstructed from the stream:
 A task snapshot contains: `id`, `title`, `description`, `column`, `column_id`,
 `priority`, `position`, `assignee` (username or null), `tags`, `watchers`.
 
-Deleting a task does **not** erase its history: its activity rows are detached
-(`task_id` is cleared and preserved as `data.task_id`) and remain in the board
-and project streams.
+Other entities use the same scheme: `created`/`deleted` carry a full snapshot
+(`data.project`, `data.board`, `data.column`, `data.developer`), `updated`
+carries `data.changes`, and column reorders are `moved` with `from`/`to`
+positions. Project/board/column commands accept `--by` for actor attribution,
+like task commands.
+
+Deleting something does **not** erase its history:
+
+- Deleted **tasks**: their rows are detached (`task_id` cleared, preserved as
+  `data.task_id`) and remain in the board and project streams.
+- Deleted **boards**/**projects**: all their history rows are likewise
+  detached (`board_id`/`project_id` move into `data`); board history stays in
+  the project stream, project history remains in the global stream.
+- Deleted **developers**: rows they authored keep the username in
+  `data.actor` even though the `actor` join becomes empty.
 
 ### `obd export`
 

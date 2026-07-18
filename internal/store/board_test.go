@@ -25,10 +25,10 @@ func TestBoardResolveForms(t *testing.T) {
 
 func TestBoardAmbiguousName(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.s.CreateProject("p2", ""); err != nil {
+	if _, err := f.s.CreateProject("p2", "", ""); err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
-	if _, err := f.s.CreateBoard("p2", "b1", ""); err != nil {
+	if _, err := f.s.CreateBoard("p2", "b1", "", ""); err != nil {
 		t.Fatalf("create p2/b1: %v", err)
 	}
 	if _, err := f.s.ResolveBoard("b1"); !errors.Is(err, ErrConflict) {
@@ -41,24 +41,24 @@ func TestBoardAmbiguousName(t *testing.T) {
 
 func TestBoardSlugAndDuplicate(t *testing.T) {
 	f := newFixture(t)
-	b, err := f.s.CreateBoard("p1", "Sprint-1", "")
+	b, err := f.s.CreateBoard("p1", "Sprint-1", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if b.Name != "sprint-1" {
 		t.Errorf("name = %q, want %q", b.Name, "sprint-1")
 	}
-	if _, err := f.s.CreateBoard("p1", "bad name", ""); !errors.Is(err, ErrInvalidInput) {
+	if _, err := f.s.CreateBoard("p1", "bad name", "", ""); !errors.Is(err, ErrInvalidInput) {
 		t.Errorf("invalid name: err = %v, want ErrInvalidInput", err)
 	}
-	if _, err := f.s.CreateBoard("p1", "B1", ""); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := f.s.CreateBoard("p1", "B1", "", ""); !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("duplicate in project: err = %v, want ErrAlreadyExists", err)
 	}
 	// Same name in another project is fine.
-	if _, err := f.s.CreateProject("p2", ""); err != nil {
+	if _, err := f.s.CreateProject("p2", "", ""); err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
-	if _, err := f.s.CreateBoard("p2", "b1", ""); err != nil {
+	if _, err := f.s.CreateBoard("p2", "b1", "", ""); err != nil {
 		t.Errorf("same board name in other project: %v", err)
 	}
 }
@@ -69,7 +69,7 @@ func TestBoardDeleteCascadesTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := f.s.DeleteBoard("p1/b1"); err != nil {
+	if err := f.s.DeleteBoard("p1/b1", ""); err != nil {
 		t.Fatalf("delete board: %v", err)
 	}
 	if _, err := f.s.GetTask(task.ID); !errors.Is(err, ErrNotFound) {
@@ -96,15 +96,15 @@ func columnNames(t *testing.T, s *Store, boardID int64) []string {
 func TestColumnAddPositionsAndClamp(t *testing.T) {
 	f := newFixture(t)
 	// Insert between Doing (1) and Done (2).
-	if _, err := f.s.AddColumn("p1/b1", "Review", intPtr(2)); err != nil {
+	if _, err := f.s.AddColumn("p1/b1", "Review", intPtr(2), ""); err != nil {
 		t.Fatalf("add review: %v", err)
 	}
 	// Negative clamps to 0.
-	if _, err := f.s.AddColumn("p1/b1", "Icebox", intPtr(-5)); err != nil {
+	if _, err := f.s.AddColumn("p1/b1", "Icebox", intPtr(-5), ""); err != nil {
 		t.Fatalf("add icebox: %v", err)
 	}
 	// Past-the-end clamps to append.
-	if _, err := f.s.AddColumn("p1/b1", "Archive", intPtr(99)); err != nil {
+	if _, err := f.s.AddColumn("p1/b1", "Archive", intPtr(99), ""); err != nil {
 		t.Fatalf("add archive: %v", err)
 	}
 	got := columnNames(t, f.s, f.board.ID)
@@ -121,14 +121,14 @@ func TestColumnAddPositionsAndClamp(t *testing.T) {
 
 func TestColumnRenameReorderDelete(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.s.RenameColumn("p1/b1", "Todo", "Doing"); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := f.s.RenameColumn("p1/b1", "Todo", "Doing", ""); !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("rename to duplicate: err = %v, want ErrAlreadyExists", err)
 	}
-	if _, err := f.s.RenameColumn("p1/b1", "Todo", "Backlog"); err != nil {
+	if _, err := f.s.RenameColumn("p1/b1", "Todo", "Backlog", ""); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
 	// Reorder Done to front; out-of-range clamps.
-	if _, err := f.s.ReorderColumn("p1/b1", "Done", -3); err != nil {
+	if _, err := f.s.ReorderColumn("p1/b1", "Done", -3, ""); err != nil {
 		t.Fatalf("reorder: %v", err)
 	}
 	got := columnNames(t, f.s, f.board.ID)
@@ -142,11 +142,11 @@ func TestColumnRenameReorderDelete(t *testing.T) {
 	if _, err := f.s.CreateTask(TaskCreate{BoardRef: "p1/b1", Title: "x", ColumnRef: "Backlog"}); err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := f.s.DeleteColumn("p1/b1", "Backlog"); !errors.Is(err, ErrConflict) {
+	if err := f.s.DeleteColumn("p1/b1", "Backlog", ""); !errors.Is(err, ErrConflict) {
 		t.Errorf("delete non-empty: err = %v, want ErrConflict", err)
 	}
 	// Empty column deletes and positions compact.
-	if err := f.s.DeleteColumn("p1/b1", "Doing"); err != nil {
+	if err := f.s.DeleteColumn("p1/b1", "Doing", ""); err != nil {
 		t.Fatalf("delete empty: %v", err)
 	}
 	got = columnNames(t, f.s, f.board.ID) // also asserts compact positions

@@ -26,7 +26,8 @@ conflict · `1` other.
 | `developer list` | — |
 | `developer get <ref>` | — |
 | `developer update <ref>` | `--name`, `--email`, `--username`, `--slack-id`, `--clear-slack-id`, `--role` — only provided flags change; empty name/email/username are rejected |
-| `developer delete <ref>` | — (tasks assigned to them become unassigned; their watches disappear) |
+| `developer delete <ref>` | — (tasks assigned to them become unassigned; their watches disappear; activity they authored keeps their username in `data.actor`) |
+| `developer tasks <ref>` | list all tasks assigned to the developer (same as `task mine --assignee <ref>`) |
 
 Email and username are unique (case-insensitive). Roles are informational
 only — they grant or restrict nothing.
@@ -45,32 +46,33 @@ free-form.
 
 | Command | Flags |
 |---|---|
-| `project create` | `--name` (req, unique, slug), `--description` |
+| `project create` | `--name` (req, unique, slug), `--description`, `--by` |
 | `project list` | — |
 | `project get <ref>` | — |
-| `project update <ref>` | `--name`, `--description` |
-| `project delete <ref>` | — deletes ALL its boards and tasks (cascades) |
+| `project update <ref>` | `--name`, `--description`, `--by` |
+| `project delete <ref>` | `--by` — deletes ALL its boards and tasks (activity history is preserved in the global stream) |
+| `project tasks <ref>` | list all tasks in the project across its boards (same as `task list --project <ref>`) |
 
 ## board
 
 | Command | Flags |
 |---|---|
-| `board create` | `--project` (req), `--name` (req, unique within project, slug), `--description`. Seeds columns Todo, Doing, Done |
+| `board create` | `--project` (req), `--name` (req, unique within project, slug), `--description`, `--by`. Seeds columns Todo, Doing, Done |
 | `board list` | `--project` (optional filter) |
 | `board get <ref>` | — |
-| `board update <ref>` | `--name`, `--description` |
-| `board delete <ref>` | — deletes all its tasks (cascades) |
+| `board update <ref>` | `--name`, `--description`, `--by` |
+| `board delete <ref>` | `--by` — deletes all its tasks (activity history is preserved in the project stream) |
 | `board show <ref>` | kanban view grouped by column; with `--json` returns `{board, columns: [{column, tasks}]}` |
 
 ## column (alias: col)
 
 | Command | Flags |
 |---|---|
-| `column add` | `--board` (req), `--name` (req, unique per board), `--position` (0-based; omitted = append; clamped to valid range) |
+| `column add` | `--board` (req), `--name` (req, unique per board), `--position` (0-based; omitted = append; clamped to valid range), `--by` |
 | `column list` | `--board` (req) |
-| `column rename <column>` | `--board` (req), `--name` (req) |
-| `column reorder <column>` | `--board` (req), `--position` (req, clamped) |
-| `column delete <column>` | `--board` (req); refuses (exit 3) if the column still contains tasks |
+| `column rename <column>` | `--board` (req), `--name` (req), `--by` |
+| `column reorder <column>` | `--board` (req), `--position` (req, clamped), `--by` |
+| `column delete <column>` | `--board` (req), `--by`; refuses (exit 3) if the column still contains tasks |
 
 ## task
 
@@ -99,7 +101,10 @@ stream, newest first (default limit 50, max 1000).
 Activity JSON fields: `id`, `task_id`, `project_id`, `board_id`, `actor_id`,
 `actor` (username), `kind`, `message`, `data`, `created_at`.
 
-### data payloads by kind
+All mutations are logged, not just task ones: project, board, column, and
+developer changes appear too, with `data.entity` naming the object kind.
+
+### data payloads by kind (entity "task")
 
 | kind | data |
 |---|---|
@@ -109,6 +114,12 @@ Activity JSON fields: `id`, `task_id`, `project_id`, `board_id`, `actor_id`,
 | `deleted` | `{"task": <snapshot of final state>}` |
 | `watched` / `unwatched` | `{"developer": "<username>"}` |
 | `commented` | none — `message` is the comment text |
+
+Other entities follow the same scheme: `created`/`deleted` carry a snapshot
+under `data.project` / `data.board` / `data.column` / `data.developer`;
+`updated` carries `data.changes`; column reorder is `moved` with `from`/`to`
+positions. Project/board rows are scoped to their project (and board) ids;
+developer rows are global (no project filter matches them).
 
 Snapshot = `{"id", "title", "description", "column", "column_id",
 "priority", "position", "assignee" (username or null), "tags", "watchers"}`.

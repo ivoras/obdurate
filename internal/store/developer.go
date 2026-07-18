@@ -67,16 +67,39 @@ func (s *Store) CreateDeveloper(name, email, username string, slackID *string, r
 	if !model.ValidRole(string(role)) {
 		return nil, fmt.Errorf("%w: invalid role %q", ErrInvalidInput, role)
 	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	ts := now()
 	const q = `
 INSERT INTO developers (name, email, username, slack_id, role, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)`
-	res, err := s.db.Exec(q, name, email, username, nullString(slackID), string(role), ts, ts)
+	res, err := tx.Exec(q, name, email, username, nullString(slackID), string(role), ts, ts)
 	if err != nil {
 		return nil, wrapUnique(err, "developer")
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return nil, err
+	}
+
+	var slack any
+	if slackID != nil && *slackID != "" {
+		slack = *slackID
+	}
+	data := map[string]any{"entity": "developer", "developer": map[string]any{
+		"id": id, "name": name, "email": email, "username": username,
+		"slack_id": slack, "role": string(role),
+	}}
+	msg := fmt.Sprintf("created developer %q", username)
+	if err := s.addActivityTx(tx, nil, nil, nil, nil, model.ActivityCreated, msg, data); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return s.GetDeveloper(id)
@@ -95,28 +118,55 @@ func (s *Store) UpdateDeveloper(ref string, u DeveloperUpdate) (*model.Developer
 	if err != nil {
 		return nil, err
 	}
+	var msgs []string
+	changed := map[string]any{}
 	if u.Name != nil {
-		d.Name = strings.TrimSpace(*u.Name)
-		if d.Name == "" {
+		name := strings.TrimSpace(*u.Name)
+		if name == "" {
 			return nil, fmt.Errorf("%w: name cannot be empty", ErrInvalidInput)
+		}
+		if name != d.Name {
+			msgs = append(msgs, fmt.Sprintf("name %q → %q", d.Name, name))
+			changed["name"] = fieldChange(d.Name, name)
+			d.Name = name
 		}
 	}
 	if u.Email != nil {
-		d.Email = strings.TrimSpace(*u.Email)
-		if d.Email == "" {
+		email := strings.TrimSpace(*u.Email)
+		if email == "" {
 			return nil, fmt.Errorf("%w: email cannot be empty", ErrInvalidInput)
+		}
+		if email != d.Email {
+			msgs = append(msgs, fmt.Sprintf("email %q → %q", d.Email, email))
+			changed["email"] = fieldChange(d.Email, email)
+			d.Email = email
 		}
 	}
 	if u.Username != nil {
-		d.Username = strings.TrimSpace(*u.Username)
-		if d.Username == "" {
+		username := strings.TrimSpace(*u.Username)
+		if username == "" {
 			return nil, fmt.Errorf("%w: username cannot be empty", ErrInvalidInput)
+		}
+		if username != d.Username {
+			msgs = append(msgs, fmt.Sprintf("username %q → %q", d.Username, username))
+			changed["username"] = fieldChange(d.Username, username)
+			d.Username = username
 		}
 	}
 	if u.SlackID != nil {
+		var oldSlack any
+		if d.SlackID != nil {
+			oldSlack = *d.SlackID
+		}
 		if *u.SlackID == "" {
-			d.SlackID = nil
-		} else {
+			if d.SlackID != nil {
+				msgs = append(msgs, "slack id cleared")
+				changed["slack_id"] = fieldChange(oldSlack, nil)
+				d.SlackID = nil
+			}
+		} else if d.SlackID == nil || *d.SlackID != *u.SlackID {
+			msgs = append(msgs, fmt.Sprintf("slack id → %q", *u.SlackID))
+			changed["slack_id"] = fieldChange(oldSlack, *u.SlackID)
 			d.SlackID = u.SlackID
 		}
 	}
@@ -124,15 +174,36 @@ func (s *Store) UpdateDeveloper(ref string, u DeveloperUpdate) (*model.Developer
 		if !model.ValidRole(string(*u.Role)) {
 			return nil, fmt.Errorf("%w: invalid role %q", ErrInvalidInput, *u.Role)
 		}
-		d.Role = *u.Role
+		if *u.Role != d.Role {
+			msgs = append(msgs, fmt.Sprintf("role %s → %s", d.Role, *u.Role))
+			changed["role"] = fieldChange(string(d.Role), string(*u.Role))
+			d.Role = *u.Role
+		}
 	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	ts := now()
 	const q = `
 UPDATE developers SET name=?, email=?, username=?, slack_id=?, role=?, updated_at=?
 WHERE id=?`
-	_, err = s.db.Exec(q, d.Name, d.Email, d.Username, nullString(d.SlackID), string(d.Role), ts, d.ID)
+	_, err = tx.Exec(q, d.Name, d.Email, d.Username, nullString(d.SlackID), string(d.Role), ts, d.ID)
 	if err != nil {
 		return nil, wrapUnique(err, "developer")
+	}
+	if len(changed) > 0 {
+		data := map[string]any{"entity": "developer", "developer_id": d.ID, "changes": changed}
+		msg := fmt.Sprintf("updated developer %q: %s", d.Username, strings.Join(msgs, "; "))
+		if err := s.addActivityTx(tx, nil, nil, nil, nil, model.ActivityUpdated, msg, data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return s.GetDeveloper(d.ID)
 }
@@ -142,8 +213,31 @@ func (s *Store) DeleteDeveloper(ref string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`DELETE FROM developers WHERE id = ?`, d.ID)
-	return err
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// actor_id is ON DELETE SET NULL; preserve authorship in the payload so
+	// history keeps saying who did what after the developer is gone.
+	if _, err := tx.Exec(
+		`UPDATE activity SET data = json_set(COALESCE(data, '{}'), '$.actor', ?) WHERE actor_id = ?`,
+		d.Username, d.ID,
+	); err != nil {
+		return err
+	}
+
+	data := map[string]any{"entity": "developer", "developer": developerSnapshot(d)}
+	msg := fmt.Sprintf("deleted developer %q (#%d)", d.Username, d.ID)
+	if err := s.addActivityTx(tx, nil, nil, nil, nil, model.ActivityDeleted, msg, data); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM developers WHERE id = ?`, d.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListDevelopers() ([]model.Developer, error) {

@@ -11,12 +11,16 @@ import (
 
 var defaultColumns = []string{"Todo", "Doing", "Done"}
 
-func (s *Store) CreateBoard(projectRef, name, description string) (*model.Board, error) {
+func (s *Store) CreateBoard(projectRef, name, description, actorRef string) (*model.Board, error) {
 	p, err := s.ResolveProject(projectRef)
 	if err != nil {
 		return nil, err
 	}
 	name, err = normalizeSlug(name, "board")
+	if err != nil {
+		return nil, err
+	}
+	actorID, err := s.resolveActorID(actorRef)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +52,15 @@ func (s *Store) CreateBoard(projectRef, name, description string) (*model.Board,
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	data := map[string]any{
+		"entity": "board",
+		"board":  map[string]any{"id": boardID, "name": name, "description": description, "project": p.Name},
+	}
+	msg := fmt.Sprintf("created board %q in project %q", name, p.Name)
+	if err := s.addActivityTx(tx, nil, &p.ID, &boardID, actorID, model.ActivityCreated, msg, data); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -134,6 +147,7 @@ func (s *Store) scanBoard(row *sql.Row) (*model.Board, error) {
 type BoardUpdate struct {
 	Name        *string
 	Description *string
+	ActorRef    string
 }
 
 func (s *Store) UpdateBoard(ref string, u BoardUpdate) (*model.Board, error) {
@@ -141,31 +155,101 @@ func (s *Store) UpdateBoard(ref string, u BoardUpdate) (*model.Board, error) {
 	if err != nil {
 		return nil, err
 	}
+	actorID, err := s.resolveActorID(u.ActorRef)
+	if err != nil {
+		return nil, err
+	}
+
+	var msgs []string
+	changed := map[string]any{}
 	if u.Name != nil {
-		b.Name, err = normalizeSlug(*u.Name, "board")
+		name, err := normalizeSlug(*u.Name, "board")
 		if err != nil {
 			return nil, err
 		}
+		if name != b.Name {
+			msgs = append(msgs, fmt.Sprintf("name %q → %q", b.Name, name))
+			changed["name"] = fieldChange(b.Name, name)
+			b.Name = name
+		}
 	}
-	if u.Description != nil {
+	if u.Description != nil && *u.Description != b.Description {
+		msgs = append(msgs, "description updated")
+		changed["description"] = fieldChange(b.Description, *u.Description)
 		b.Description = *u.Description
 	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	ts := now()
-	_, err = s.db.Exec(`UPDATE boards SET name=?, description=?, updated_at=? WHERE id=?`,
+	_, err = tx.Exec(`UPDATE boards SET name=?, description=?, updated_at=? WHERE id=?`,
 		b.Name, b.Description, ts, b.ID)
 	if err != nil {
 		return nil, wrapUnique(err, "board")
 	}
+	if len(changed) > 0 {
+		data := map[string]any{"entity": "board", "board_id": b.ID, "changes": changed}
+		msg := "updated board: " + strings.Join(msgs, "; ")
+		if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	return s.GetBoard(b.ID)
 }
 
-func (s *Store) DeleteBoard(ref string) error {
+func (s *Store) DeleteBoard(ref, actorRef string) error {
 	b, err := s.ResolveBoard(ref)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`DELETE FROM boards WHERE id = ?`, b.ID)
-	return err
+	p, err := s.GetProject(b.ProjectID)
+	if err != nil {
+		return err
+	}
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Preserve the board's activity history, which the board_id cascade (and
+	// the cascade of its tasks) would otherwise delete: detach the foreign
+	// keys into the JSON payload. Rows keep project_id and stay visible in
+	// the project stream.
+	if _, err := tx.Exec(
+		`UPDATE activity SET data = json_set(COALESCE(data, '{}'), '$.task_id', task_id), task_id = NULL
+		 WHERE board_id = ? AND task_id IS NOT NULL`, b.ID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`UPDATE activity SET data = json_set(COALESCE(data, '{}'), '$.board_id', board_id), board_id = NULL
+		 WHERE board_id = ?`, b.ID,
+	); err != nil {
+		return err
+	}
+
+	data := map[string]any{"entity": "board", "board": boardSnapshot(b, p.Name)}
+	msg := fmt.Sprintf("deleted board %q (#%d)", b.Name, b.ID)
+	if err := s.addActivityTx(tx, nil, &b.ProjectID, nil, actorID, model.ActivityDeleted, msg, data); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM boards WHERE id = ?`, b.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListBoards(projectRef string) ([]model.Board, error) {
@@ -264,7 +348,7 @@ func (s *Store) scanColumn(row *sql.Row) (*model.Column, error) {
 	return &c, nil
 }
 
-func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, error) {
+func (s *Store) AddColumn(boardRef, name string, position *int, actorRef string) (*model.Column, error) {
 	b, err := s.ResolveBoard(boardRef)
 	if err != nil {
 		return nil, err
@@ -272,6 +356,10 @@ func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, 
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("%w: column name is required", ErrInvalidInput)
+	}
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
 	}
 
 	var max sql.NullInt64
@@ -323,6 +411,16 @@ func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, 
 	if err != nil {
 		return nil, err
 	}
+
+	data := map[string]any{
+		"entity": "column",
+		"column": map[string]any{"id": id, "name": name, "position": pos},
+	}
+	msg := fmt.Sprintf("added column %q at position %d", name, pos)
+	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityCreated, msg, data); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -331,7 +429,7 @@ func (s *Store) AddColumn(boardRef, name string, position *int) (*model.Column, 
 	))
 }
 
-func (s *Store) RenameColumn(boardRef, columnRef, newName string) (*model.Column, error) {
+func (s *Store) RenameColumn(boardRef, columnRef, newName, actorRef string) (*model.Column, error) {
 	b, err := s.ResolveBoard(boardRef)
 	if err != nil {
 		return nil, err
@@ -344,20 +442,48 @@ func (s *Store) RenameColumn(boardRef, columnRef, newName string) (*model.Column
 	if newName == "" {
 		return nil, fmt.Errorf("%w: column name is required", ErrInvalidInput)
 	}
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	ts := now()
-	_, err = s.db.Exec(`UPDATE columns SET name=?, updated_at=? WHERE id=?`, newName, ts, c.ID)
+	_, err = tx.Exec(`UPDATE columns SET name=?, updated_at=? WHERE id=?`, newName, ts, c.ID)
 	if err != nil {
 		return nil, wrapUnique(err, "column")
+	}
+	if newName != c.Name {
+		data := map[string]any{
+			"entity": "column", "column_id": c.ID,
+			"changes": map[string]any{"name": fieldChange(c.Name, newName)},
+		}
+		msg := fmt.Sprintf("renamed column %q → %q", c.Name, newName)
+		if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return s.ResolveColumn(b.ID, strconv.FormatInt(c.ID, 10))
 }
 
-func (s *Store) ReorderColumn(boardRef, columnRef string, newPos int) (*model.Column, error) {
+func (s *Store) ReorderColumn(boardRef, columnRef string, newPos int, actorRef string) (*model.Column, error) {
 	b, err := s.ResolveBoard(boardRef)
 	if err != nil {
 		return nil, err
 	}
 	c, err := s.ResolveColumn(b.ID, columnRef)
+	if err != nil {
+		return nil, err
+	}
+	actorID, err := s.resolveActorID(actorRef)
 	if err != nil {
 		return nil, err
 	}
@@ -406,18 +532,34 @@ func (s *Store) ReorderColumn(boardRef, columnRef string, newPos int) (*model.Co
 			return nil, err
 		}
 	}
+
+	data := map[string]any{
+		"entity": "column",
+		"column": map[string]any{"id": c.ID, "name": c.Name},
+		"from":   map[string]any{"position": c.Position},
+		"to":     map[string]any{"position": newPos},
+	}
+	msg := fmt.Sprintf("moved column %q from position %d to %d", c.Name, c.Position, newPos)
+	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityMoved, msg, data); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return s.ResolveColumn(b.ID, strconv.FormatInt(c.ID, 10))
 }
 
-func (s *Store) DeleteColumn(boardRef, columnRef string) error {
+func (s *Store) DeleteColumn(boardRef, columnRef, actorRef string) error {
 	b, err := s.ResolveBoard(boardRef)
 	if err != nil {
 		return err
 	}
 	c, err := s.ResolveColumn(b.ID, columnRef)
+	if err != nil {
+		return err
+	}
+	actorID, err := s.resolveActorID(actorRef)
 	if err != nil {
 		return err
 	}
@@ -465,6 +607,12 @@ func (s *Store) DeleteColumn(boardRef, columnRef string) error {
 		if _, err := tx.Exec(`UPDATE columns SET position = ?, updated_at = ? WHERE id = ?`, i, ts, id); err != nil {
 			return err
 		}
+	}
+
+	data := map[string]any{"entity": "column", "column": columnSnapshot(c)}
+	msg := fmt.Sprintf("deleted column %q", c.Name)
+	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityDeleted, msg, data); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

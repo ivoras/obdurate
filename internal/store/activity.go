@@ -9,7 +9,10 @@ import (
 	"obdurate/internal/model"
 )
 
-// Activity data payload shapes, by kind:
+// Activity data payload shapes. Every payload carries "entity" naming the
+// affected object kind: "task", "project", "board", "column", "developer".
+//
+// entity "task", by kind:
 //
 //	created:   {"task": <task snapshot>}
 //	updated:   {"changes": {"<field>": {"old": ..., "new": ...}, ...}}
@@ -22,6 +25,23 @@ import (
 //
 // A task snapshot is: {"id", "title", "description", "column", "column_id",
 // "priority", "position", "assignee" (username or null), "tags", "watchers"}.
+//
+// Other entities:
+//
+//	project created/deleted:   {"project": {"id", "name", "description"}}
+//	project updated:           {"project_id": ..., "changes": {...}}
+//	board created/deleted:     {"board": {"id", "name", "description", "project"}}
+//	board updated:             {"board_id": ..., "changes": {...}}
+//	column created/deleted:    {"column": {"id", "name", "position"}}
+//	column updated:            {"column_id": ..., "changes": {...}}
+//	column moved:              {"column": {...}, "from": {"position": ...}, "to": {"position": ...}}
+//	developer created/deleted: {"developer": {"id", "name", "email", "username", "slack_id", "role"}}
+//	developer updated:         {"developer_id": ..., "changes": {...}}
+//
+// Deletions detach rather than cascade the deleted object's activity rows:
+// the row's task_id/board_id/project_id foreign keys move into the payload
+// as data.task_id / data.board_id / data.project_id, and a deleted
+// developer's authorship is preserved as data.actor (username).
 
 // taskSnapshot captures the externally meaningful state of a task for
 // activity payloads (created/deleted), enough to reconstruct it.
@@ -55,6 +75,42 @@ func taskSnapshot(t *model.Task) map[string]any {
 // fieldChange is the {"old": ..., "new": ...} element of an "updated" payload.
 func fieldChange(old, new any) map[string]any {
 	return map[string]any{"old": old, "new": new}
+}
+
+func projectSnapshot(p *model.Project) map[string]any {
+	return map[string]any{"id": p.ID, "name": p.Name, "description": p.Description}
+}
+
+func boardSnapshot(b *model.Board, projectName string) map[string]any {
+	return map[string]any{"id": b.ID, "name": b.Name, "description": b.Description, "project": projectName}
+}
+
+func columnSnapshot(c *model.Column) map[string]any {
+	return map[string]any{"id": c.ID, "name": c.Name, "position": c.Position}
+}
+
+func developerSnapshot(d *model.Developer) map[string]any {
+	var slack any
+	if d.SlackID != nil {
+		slack = *d.SlackID
+	}
+	return map[string]any{
+		"id": d.ID, "name": d.Name, "email": d.Email,
+		"username": d.Username, "slack_id": slack, "role": string(d.Role),
+	}
+}
+
+// resolveActorID resolves an optional --by actor reference for activity
+// attribution; an empty ref means no actor.
+func (s *Store) resolveActorID(ref string) (*int64, error) {
+	if strings.TrimSpace(ref) == "" {
+		return nil, nil
+	}
+	d, err := s.ResolveDeveloper(ref)
+	if err != nil {
+		return nil, fmt.Errorf("actor: %w", err)
+	}
+	return &d.ID, nil
 }
 
 func marshalActivityData(data any) (any, error) {

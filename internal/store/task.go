@@ -66,13 +66,9 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 		assigneeUser = d.Username
 	}
 
-	var actorID *int64
-	if strings.TrimSpace(in.ActorRef) != "" {
-		a, err := s.ResolveDeveloper(in.ActorRef)
-		if err != nil {
-			return nil, fmt.Errorf("actor: %w", err)
-		}
-		actorID = &a.ID
+	actorID, err := s.resolveActorID(in.ActorRef)
+	if err != nil {
+		return nil, err
 	}
 
 	watchers, err := s.resolveDevelopers(in.WatcherRefs)
@@ -127,7 +123,7 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 	if assigneeUser != "" {
 		assigneeVal = assigneeUser
 	}
-	data := map[string]any{"task": map[string]any{
+	data := map[string]any{"entity": "task", "task": map[string]any{
 		"id":          taskID,
 		"title":       title,
 		"description": in.Description,
@@ -334,13 +330,9 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 		return nil, err
 	}
 
-	var actorID *int64
-	if strings.TrimSpace(u.ActorRef) != "" {
-		a, err := s.ResolveDeveloper(u.ActorRef)
-		if err != nil {
-			return nil, fmt.Errorf("actor: %w", err)
-		}
-		actorID = &a.ID
+	actorID, err := s.resolveActorID(u.ActorRef)
+	if err != nil {
+		return nil, err
 	}
 
 	var changes []string
@@ -427,7 +419,7 @@ func (s *Store) UpdateTask(id int64, u TaskUpdate) (*model.Task, error) {
 
 	if len(changes) > 0 {
 		msg := "updated: " + strings.Join(changes, "; ")
-		data := map[string]any{"changes": changed}
+		data := map[string]any{"entity": "task", "changes": changed}
 		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
 			return nil, err
 		}
@@ -453,13 +445,9 @@ func (s *Store) MoveTask(id int64, columnRef string, position *int, actorRef str
 		return nil, err
 	}
 
-	var actorID *int64
-	if strings.TrimSpace(actorRef) != "" {
-		a, err := s.ResolveDeveloper(actorRef)
-		if err != nil {
-			return nil, fmt.Errorf("actor: %w", err)
-		}
-		actorID = &a.ID
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
 	}
 
 	tx, err := s.db.Begin()
@@ -542,8 +530,9 @@ func (s *Store) MoveTask(id int64, columnRef string, position *int, actorRef str
 	}
 
 	data := map[string]any{
-		"from": map[string]any{"column": fromName, "column_id": fromColumn, "position": fromPos},
-		"to":   map[string]any{"column": col.Name, "column_id": col.ID, "position": pos},
+		"entity": "task",
+		"from":   map[string]any{"column": fromName, "column_id": fromColumn, "position": fromPos},
+		"to":     map[string]any{"column": col.Name, "column_id": col.ID, "position": pos},
 	}
 	msg := fmt.Sprintf("moved from %q to %q", fromName, col.Name)
 	if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityMoved, msg, data); err != nil {
@@ -564,13 +553,9 @@ func (s *Store) DeleteTask(id int64, actorRef string) error {
 	if err != nil {
 		return err
 	}
-	var actorID *int64
-	if strings.TrimSpace(actorRef) != "" {
-		a, err := s.ResolveDeveloper(actorRef)
-		if err != nil {
-			return fmt.Errorf("actor: %w", err)
-		}
-		actorID = &a.ID
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return err
 	}
 
 	tx, err := s.db.Begin()
@@ -582,7 +567,7 @@ func (s *Store) DeleteTask(id int64, actorRef string) error {
 	// Log at board level (task_id NULL): activity rows with the task's id
 	// would be removed by ON DELETE CASCADE. The data payload carries a full
 	// snapshot of the task's final state.
-	data := map[string]any{"task": taskSnapshot(t)}
+	data := map[string]any{"entity": "task", "task": taskSnapshot(t)}
 	msg := fmt.Sprintf("deleted task %q (#%d)", t.Title, t.ID)
 	if err := s.addActivityTx(tx, nil, &b.ProjectID, &b.ID, actorID, model.ActivityDeleted, msg, data); err != nil {
 		return err
@@ -768,13 +753,9 @@ func (s *Store) CommentTask(id int64, actorRef, message string) (*model.Activity
 	if err != nil {
 		return nil, err
 	}
-	var actorID *int64
-	if strings.TrimSpace(actorRef) != "" {
-		a, err := s.ResolveDeveloper(actorRef)
-		if err != nil {
-			return nil, fmt.Errorf("actor: %w", err)
-		}
-		actorID = &a.ID
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
 	}
 	return s.AddActivity(&t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityCommented, message, nil)
 }
@@ -803,7 +784,7 @@ func (s *Store) WatchTask(id int64, devRef string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
-		data := map[string]any{"developer": d.Username}
+		data := map[string]any{"entity": "task", "developer": d.Username}
 		msg := fmt.Sprintf("%s is now watching", d.Username)
 		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityWatched, msg, data); err != nil {
 			return err
@@ -836,7 +817,7 @@ func (s *Store) UnwatchTask(id int64, devRef string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
-		data := map[string]any{"developer": d.Username}
+		data := map[string]any{"entity": "task", "developer": d.Username}
 		msg := fmt.Sprintf("%s stopped watching", d.Username)
 		if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, &d.ID, model.ActivityUnwatched, msg, data); err != nil {
 			return err

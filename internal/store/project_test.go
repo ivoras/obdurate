@@ -8,14 +8,14 @@ import (
 
 func TestProjectSlugEnforcement(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.CreateProject("Widget", "desc")
+	p, err := s.CreateProject("Widget", "desc", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if p.Name != "widget" {
 		t.Errorf("name = %q, want lowercased %q", p.Name, "widget")
 	}
-	if _, err := s.CreateProject("My Project", ""); !errors.Is(err, ErrInvalidInput) {
+	if _, err := s.CreateProject("My Project", "", ""); !errors.Is(err, ErrInvalidInput) {
 		t.Errorf("space name: err = %v, want ErrInvalidInput", err)
 	}
 	if _, err := s.UpdateProject("widget", ProjectUpdate{Name: strP("Bad Name")}); !errors.Is(err, ErrInvalidInput) {
@@ -32,11 +32,11 @@ func TestProjectSlugEnforcement(t *testing.T) {
 
 func TestProjectDuplicateAndResolve(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.CreateProject("p1", "")
+	p, err := s.CreateProject("p1", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := s.CreateProject("P1", ""); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := s.CreateProject("P1", "", ""); !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("duplicate (case-insensitive): err = %v, want ErrAlreadyExists", err)
 	}
 	for _, ref := range []string{"p1", "P1", strconv.FormatInt(p.ID, 10)} {
@@ -79,10 +79,10 @@ func TestEnsureDefaults(t *testing.T) {
 		t.Errorf("projects after re-run = %d, want 1", len(list))
 	}
 	// A deleted default is not recreated while other projects exist.
-	if _, err := s.CreateProject("real", ""); err != nil {
+	if _, err := s.CreateProject("real", "", ""); err != nil {
 		t.Fatalf("create real: %v", err)
 	}
-	if err := s.DeleteProject("default"); err != nil {
+	if err := s.DeleteProject("default", ""); err != nil {
 		t.Fatalf("delete default: %v", err)
 	}
 	if err := s.EnsureDefaults(); err != nil {
@@ -92,7 +92,7 @@ func TestEnsureDefaults(t *testing.T) {
 		t.Errorf("default recreated despite existing projects: err = %v", err)
 	}
 	// With zero projects it is reseeded.
-	if err := s.DeleteProject("real"); err != nil {
+	if err := s.DeleteProject("real", ""); err != nil {
 		t.Fatalf("delete real: %v", err)
 	}
 	if err := s.EnsureDefaults(); err != nil {
@@ -109,7 +109,7 @@ func TestProjectDeleteCascades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := f.s.DeleteProject("p1"); err != nil {
+	if err := f.s.DeleteProject("p1", ""); err != nil {
 		t.Fatalf("delete project: %v", err)
 	}
 	if _, err := f.s.ResolveBoard("p1/b1"); !errors.Is(err, ErrNotFound) {

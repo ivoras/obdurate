@@ -22,8 +22,24 @@ func newDeveloperCmd(app *App) *cobra.Command {
 		devGet(app),
 		devUpdate(app),
 		devDelete(app),
+		devTasks(app),
 	)
 	return cmd
+}
+
+func devTasks(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tasks <ref>",
+		Short: "List all tasks assigned to a developer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			list, err := app.Store.ListTasks(store.TaskFilter{AssigneeRef: args[0]})
+			if err != nil {
+				return err
+			}
+			return printTaskList(app, list)
+		},
+	}
 }
 
 func devCreate(app *App) *cobra.Command {

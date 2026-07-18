@@ -308,7 +308,7 @@ func TestWatchUnwatchIdempotent(t *testing.T) {
 
 func TestListTasksFilters(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.s.CreateBoard("p1", "b2", ""); err != nil {
+	if _, err := f.s.CreateBoard("p1", "b2", "", ""); err != nil {
 		t.Fatalf("create b2: %v", err)
 	}
 	mk := func(board, title, assignee, tag string, watchers ...string) {

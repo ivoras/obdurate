@@ -60,7 +60,7 @@ Conventions:
 | Board | Belongs to project; ref: `id` \| name \| `project/board`. Names are slugs (same rules as projects) |
 | Column | Per-board; default Todo, Doing, Done on create; ordered by `position` |
 | Task | title, description, assignee, priority, tags, watchers, position in column |
-| Activity | Unified stream: created, updated, moved, commented, watched, unwatched, deleted, … Each row has a `data` JSON payload (old/new values or snapshots) so state transitions are reconstructible; payload shapes are documented at the top of `internal/store/activity.go` and in README. Deleting a task detaches (does not cascade-delete) its history: `task_id` moves into `data.task_id`. |
+| Activity | Unified stream covering ALL mutations (tasks, projects, boards, columns, developers): created, updated, moved, commented, watched, unwatched, deleted. Each row has a `data` JSON payload (`data.entity` + old/new values or snapshots) so state transitions are reconstructible; payload shapes are documented at the top of `internal/store/activity.go` and in README. Deletions detach (never cascade-delete) history: ids move into `data.task_id`/`data.board_id`/`data.project_id`, and deleted developers' authorship is kept in `data.actor`. When adding a store mutation, log it in the same tx via `addActivityTx` and accept an actor ref (`--by`). |
 
 Priority: `low|medium|high|critical` (default medium).
 

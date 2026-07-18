@@ -28,12 +28,12 @@ func newBoardCmd(app *App) *cobra.Command {
 }
 
 func boardCreate(app *App) *cobra.Command {
-	var project, name, description string
+	var project, name, description, by string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a board (default columns: Todo, Doing, Done)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := app.Store.CreateBoard(project, name, description)
+			b, err := app.Store.CreateBoard(project, name, description, by)
 			if err != nil {
 				return err
 			}
@@ -43,6 +43,7 @@ func boardCreate(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project id or name (required)")
 	cmd.Flags().StringVar(&name, "name", "", "board name (required)")
 	cmd.Flags().StringVar(&description, "description", "", "description")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
@@ -93,13 +94,13 @@ func boardGet(app *App) *cobra.Command {
 }
 
 func boardUpdate(app *App) *cobra.Command {
-	var name, description string
+	var name, description, by string
 	cmd := &cobra.Command{
 		Use:   "update <ref>",
 		Short: "Update a board",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			u := store.BoardUpdate{}
+			u := store.BoardUpdate{ActorRef: by}
 			if cmd.Flags().Changed("name") {
 				u.Name = &name
 			}
@@ -115,16 +116,18 @@ func boardUpdate(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "new name")
 	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	return cmd
 }
 
 func boardDelete(app *App) *cobra.Command {
-	return &cobra.Command{
+	var by string
+	cmd := &cobra.Command{
 		Use:   "delete <ref>",
 		Short: "Delete a board",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := app.Store.DeleteBoard(args[0]); err != nil {
+			if err := app.Store.DeleteBoard(args[0], by); err != nil {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted board %s", args[0]))
@@ -134,6 +137,8 @@ func boardDelete(app *App) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
+	return cmd
 }
 
 func boardShow(app *App) *cobra.Command {
@@ -234,7 +239,7 @@ func newColumnCmd(app *App) *cobra.Command {
 }
 
 func columnAdd(app *App) *cobra.Command {
-	var board, name string
+	var board, name, by string
 	var position int
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -244,7 +249,7 @@ func columnAdd(app *App) *cobra.Command {
 			if cmd.Flags().Changed("position") {
 				pos = &position
 			}
-			c, err := app.Store.AddColumn(board, name, pos)
+			c, err := app.Store.AddColumn(board, name, pos, by)
 			if err != nil {
 				return err
 			}
@@ -254,6 +259,7 @@ func columnAdd(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&board, "board", "", "board ref (required)")
 	cmd.Flags().StringVar(&name, "name", "", "column name (required)")
 	cmd.Flags().IntVar(&position, "position", 0, "position index (default: append)")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("board")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
@@ -293,13 +299,13 @@ func columnList(app *App) *cobra.Command {
 }
 
 func columnRename(app *App) *cobra.Command {
-	var board, name string
+	var board, name, by string
 	cmd := &cobra.Command{
 		Use:   "rename <column>",
 		Short: "Rename a column",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := app.Store.RenameColumn(board, args[0], name)
+			c, err := app.Store.RenameColumn(board, args[0], name, by)
 			if err != nil {
 				return err
 			}
@@ -308,20 +314,21 @@ func columnRename(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&board, "board", "", "board ref (required)")
 	cmd.Flags().StringVar(&name, "name", "", "new name (required)")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("board")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
 
 func columnReorder(app *App) *cobra.Command {
-	var board string
+	var board, by string
 	var position int
 	cmd := &cobra.Command{
 		Use:   "reorder <column>",
 		Short: "Change column position",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := app.Store.ReorderColumn(board, args[0], position)
+			c, err := app.Store.ReorderColumn(board, args[0], position, by)
 			if err != nil {
 				return err
 			}
@@ -330,19 +337,20 @@ func columnReorder(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&board, "board", "", "board ref (required)")
 	cmd.Flags().IntVar(&position, "position", 0, "new position index (required)")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("board")
 	_ = cmd.MarkFlagRequired("position")
 	return cmd
 }
 
 func columnDelete(app *App) *cobra.Command {
-	var board string
+	var board, by string
 	cmd := &cobra.Command{
 		Use:   "delete <column>",
 		Short: "Delete an empty column",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := app.Store.DeleteColumn(board, args[0]); err != nil {
+			if err := app.Store.DeleteColumn(board, args[0], by); err != nil {
 				return err
 			}
 			app.Print.PrintOK(fmt.Sprintf("deleted column %s", args[0]))
@@ -353,6 +361,7 @@ func columnDelete(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&board, "board", "", "board ref (required)")
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref for activity log")
 	_ = cmd.MarkFlagRequired("board")
 	return cmd
 }
