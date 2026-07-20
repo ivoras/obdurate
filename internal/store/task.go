@@ -134,6 +134,7 @@ func (s *Store) CreateTask(in TaskCreate) (*model.Task, error) {
 		"assignee":    assigneeVal,
 		"tags":        appliedTags,
 		"watchers":    watcherUsers,
+		"metadata":    map[string]string{},
 	}}
 	msg := fmt.Sprintf("created task %q in column %q", title, col.Name)
 	if err := s.addActivityTx(tx, &taskID, &b.ProjectID, &b.ID, actorID, model.ActivityCreated, msg, data); err != nil {
@@ -183,6 +184,11 @@ WHERE t.id = ?`
 		return nil, err
 	}
 	t.WatcherRefs = watchers
+	meta, err := s.taskMetadata(id)
+	if err != nil {
+		return nil, err
+	}
+	t.Metadata = meta
 	return &t, nil
 }
 
@@ -222,6 +228,25 @@ WHERE tw.task_id = ? ORDER BY d.username`, taskID)
 			return nil, err
 		}
 		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// taskMetadata returns a task's metadata as key/value pairs. The returned
+// map is never nil so JSON output is "{}" rather than "null" when empty.
+func (s *Store) taskMetadata(taskID int64) (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT key, value FROM task_metadata WHERE task_id = ? ORDER BY key`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
 	}
 	return out, rows.Err()
 }
@@ -705,6 +730,11 @@ LEFT JOIN developers d ON d.id = t.assignee_id`
 			return nil, err
 		}
 		out[i].WatcherRefs = watchers
+		meta, err := s.taskMetadata(out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Metadata = meta
 	}
 	return out, nil
 }
@@ -824,4 +854,146 @@ func (s *Store) UnwatchTask(id int64, devRef string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// SetTaskMetadata upserts a single metadata key on a task. The key is
+// normalized to a slug (lowercase letters/digits/'-'/'_'); the value is
+// stored as-is. Setting a key to its current value is a no-op: nothing is
+// written and no activity is logged.
+func (s *Store) SetTaskMetadata(id int64, key, value, actorRef string) (*model.Task, error) {
+	t, err := s.GetTask(id)
+	if err != nil {
+		return nil, err
+	}
+	key, err = normalizeMetadataKey(key)
+	if err != nil {
+		return nil, err
+	}
+	b, err := s.GetBoard(t.BoardID)
+	if err != nil {
+		return nil, err
+	}
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var old sql.NullString
+	err = tx.QueryRow(`SELECT value FROM task_metadata WHERE task_id = ? AND key = ?`, id, key).Scan(&old)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if old.Valid && old.String == value {
+		// No write happened: close the tx before GetTask asks the pool for a
+		// connection (SetMaxOpenConns(1) would deadlock against our own open tx).
+		_ = tx.Rollback()
+		return s.GetTask(id)
+	}
+
+	ts := now()
+	if old.Valid {
+		if _, err := tx.Exec(`UPDATE task_metadata SET value = ?, updated_at = ? WHERE task_id = ? AND key = ?`, value, ts, id, key); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := tx.Exec(
+			`INSERT INTO task_metadata (task_id, key, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			id, key, value, ts, ts,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	var oldVal any
+	if old.Valid {
+		oldVal = old.String
+	}
+	data := map[string]any{"entity": "task", "changes": map[string]any{"metadata." + key: fieldChange(oldVal, value)}}
+	msg := fmt.Sprintf("metadata %q set", key)
+	if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetTask(id)
+}
+
+// DeleteTaskMetadata removes a metadata key from a task. Deleting a key
+// that isn't set is a no-op, matching UnwatchTask's idempotent behavior.
+func (s *Store) DeleteTaskMetadata(id int64, key, actorRef string) (*model.Task, error) {
+	t, err := s.GetTask(id)
+	if err != nil {
+		return nil, err
+	}
+	key, err = normalizeMetadataKey(key)
+	if err != nil {
+		return nil, err
+	}
+	b, err := s.GetBoard(t.BoardID)
+	if err != nil {
+		return nil, err
+	}
+	actorID, err := s.resolveActorID(actorRef)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var old string
+	err = tx.QueryRow(`SELECT value FROM task_metadata WHERE task_id = ? AND key = ?`, id, key).Scan(&old)
+	if err == sql.ErrNoRows {
+		// No write happened: close the tx before GetTask asks the pool for a
+		// connection (SetMaxOpenConns(1) would deadlock against our own open tx).
+		_ = tx.Rollback()
+		return s.GetTask(id)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(`DELETE FROM task_metadata WHERE task_id = ? AND key = ?`, id, key); err != nil {
+		return nil, err
+	}
+
+	data := map[string]any{"entity": "task", "changes": map[string]any{"metadata." + key: fieldChange(old, nil)}}
+	msg := fmt.Sprintf("metadata %q removed", key)
+	if err := s.addActivityTx(tx, &t.ID, &b.ProjectID, &b.ID, actorID, model.ActivityUpdated, msg, data); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetTask(id)
+}
+
+// GetTaskMetadata returns a single metadata value for a task.
+func (s *Store) GetTaskMetadata(id int64, key string) (string, error) {
+	if _, err := s.GetTask(id); err != nil {
+		return "", err
+	}
+	key, err := normalizeMetadataKey(key)
+	if err != nil {
+		return "", err
+	}
+	var value string
+	err = s.db.QueryRow(`SELECT value FROM task_metadata WHERE task_id = ? AND key = ?`, id, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return value, nil
 }

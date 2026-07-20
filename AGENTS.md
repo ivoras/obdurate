@@ -59,7 +59,7 @@ Conventions:
 | Project | Multiple boards. Names are slugs (`normalizeSlug` in store.go: lowercase ascii/digits/`-`/`_`, ≤64 chars; input auto-lowercased). A fresh DB is seeded with project `default` + board `main` (`store.EnsureDefaults`, called from root.go; only when zero projects exist) |
 | Board | Belongs to project; ref: `id` \| name \| `project/board`. Names are slugs (same rules as projects) |
 | Column | Per-board; default Todo, Doing, Done on create; ordered by `position` |
-| Task | title, description, assignee, priority, tags, watchers, position in column |
+| Task | title, description, assignee, priority, tags, watchers, metadata (key/value, `task_metadata` table), position in column |
 | Activity | Unified stream covering ALL mutations (tasks, projects, boards, columns, developers): created, updated, moved, commented, watched, unwatched, deleted. Each row has a `data` JSON payload (`data.entity` + old/new values or snapshots) so state transitions are reconstructible; payload shapes are documented at the top of `internal/store/activity.go` and in README. Deletions detach (never cascade-delete) history: ids move into `data.task_id`/`data.board_id`/`data.project_id`, and deleted developers' authorship is kept in `data.actor`. When adding a store mutation, log it in the same tx via `addActivityTx` and accept an actor ref (`--by`). |
 
 Priority: `low|medium|high|critical` (default medium).
@@ -178,6 +178,7 @@ After meaningful CLI changes, do a short smoke path:
 ./obd --db /tmp/obd-smoke.db project create --name p
 ./obd --db /tmp/obd-smoke.db board create --project p --name b
 ./obd --db /tmp/obd-smoke.db task create --board p/b --title t --by a
+./obd --db /tmp/obd-smoke.db task metadata set 1 jira-key PROJ-1 --by a
 ./obd --db /tmp/obd-smoke.db board show p/b
 ./obd --db /tmp/obd-smoke.db export tasks --board p/b --json
 ```

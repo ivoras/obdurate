@@ -376,6 +376,121 @@ func TestBoardView(t *testing.T) {
 	}
 }
 
+func TestTaskMetadataCRUD(t *testing.T) {
+	f := newFixture(t)
+	task, err := f.s.CreateTask(TaskCreate{BoardRef: "p1/b1", Title: "m"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(task.Metadata) != 0 {
+		t.Errorf("initial metadata = %v, want empty", task.Metadata)
+	}
+
+	updated, err := f.s.SetTaskMetadata(task.ID, "  Jira-Key ", "PROJ-123", "alice")
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if updated.Metadata["jira-key"] != "PROJ-123" {
+		t.Errorf("metadata = %v, want jira-key=PROJ-123 (key lowercased)", updated.Metadata)
+	}
+
+	value, err := f.s.GetTaskMetadata(task.ID, "JIRA-KEY")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if value != "PROJ-123" {
+		t.Errorf("get value = %q, want PROJ-123", value)
+	}
+
+	acts, err := f.s.ListActivity(ActivityFilter{TaskID: task.ID})
+	if err != nil {
+		t.Fatalf("list activity: %v", err)
+	}
+	set := findActivity(t, acts, model.ActivityUpdated)
+	changes, ok := decodeData(t, set)["changes"].(map[string]any)
+	if !ok {
+		t.Fatalf("set payload missing changes: %s", string(set.Data))
+	}
+	change, ok := changes["metadata.jira-key"].(map[string]any)
+	if !ok {
+		t.Fatalf("changes missing metadata.jira-key: %v", changes)
+	}
+	if change["old"] != nil || change["new"] != "PROJ-123" {
+		t.Errorf("metadata change = %v, want old=nil new=PROJ-123", change)
+	}
+
+	// Setting the same value again is a no-op: no new activity.
+	before := len(acts)
+	if _, err := f.s.SetTaskMetadata(task.ID, "jira-key", "PROJ-123", "alice"); err != nil {
+		t.Fatalf("no-op set: %v", err)
+	}
+	after, _ := f.s.ListActivity(ActivityFilter{TaskID: task.ID})
+	if len(after) != before {
+		t.Errorf("activity grew from %d to %d on no-op metadata set", before, len(after))
+	}
+
+	// Overwriting logs old -> new.
+	if _, err := f.s.SetTaskMetadata(task.ID, "jira-key", "PROJ-456", ""); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	acts, _ = f.s.ListActivity(ActivityFilter{TaskID: task.ID})
+	var overwrite model.Activity
+	for _, a := range acts {
+		if a.Kind != model.ActivityUpdated {
+			continue
+		}
+		c, _ := decodeData(t, a)["changes"].(map[string]any)
+		if ch, ok := c["metadata.jira-key"].(map[string]any); ok && ch["new"] == "PROJ-456" {
+			overwrite = a
+			break
+		}
+	}
+	if overwrite.ID == 0 {
+		t.Fatalf("no activity found for metadata overwrite")
+	}
+	ch := decodeData(t, overwrite)["changes"].(map[string]any)["metadata.jira-key"].(map[string]any)
+	if ch["old"] != "PROJ-123" || ch["new"] != "PROJ-456" {
+		t.Errorf("overwrite change = %v, want old=PROJ-123 new=PROJ-456", ch)
+	}
+
+	// Delete removes the key and logs old -> nil; deleting again is a no-op.
+	deleted, err := f.s.DeleteTaskMetadata(task.ID, "jira-key", "bob")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, ok := deleted.Metadata["jira-key"]; ok {
+		t.Errorf("metadata still has jira-key after delete: %v", deleted.Metadata)
+	}
+	if _, err := f.s.GetTaskMetadata(task.ID, "jira-key"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get after delete: err = %v, want ErrNotFound", err)
+	}
+	beforeDel, _ := f.s.ListActivity(ActivityFilter{TaskID: task.ID})
+	if _, err := f.s.DeleteTaskMetadata(task.ID, "jira-key", "bob"); err != nil {
+		t.Fatalf("no-op delete: %v", err)
+	}
+	afterDel, _ := f.s.ListActivity(ActivityFilter{TaskID: task.ID})
+	if len(afterDel) != len(beforeDel) {
+		t.Errorf("activity grew from %d to %d on no-op delete", len(beforeDel), len(afterDel))
+	}
+}
+
+func TestTaskMetadataInvalidKey(t *testing.T) {
+	f := newFixture(t)
+	task, err := f.s.CreateTask(TaskCreate{BoardRef: "p1/b1", Title: "m"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.s.SetTaskMetadata(task.ID, "", "v", ""); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("empty key: err = %v, want ErrInvalidInput", err)
+	}
+	if _, err := f.s.SetTaskMetadata(task.ID, "not a slug", "v", ""); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("invalid key: err = %v, want ErrInvalidInput", err)
+	}
+	if _, err := f.s.SetTaskMetadata(999999, "k", "v", ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("bad task id: err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestListActivityLimitAndEmptyNonNil(t *testing.T) {
 	f := newFixture(t)
 	list, err := f.s.ListActivity(ActivityFilter{TaskID: 12345})

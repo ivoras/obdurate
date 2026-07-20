@@ -6,7 +6,7 @@ CLI project management tool with a kanban-style workflow. Data is stored in SQLi
 
 - Multiple **projects**, each with multiple **kanban boards**
 - Columns customizable per board (defaults: **Todo / Doing / Done**)
-- **Tasks** with title, description, assignee, priority, tags, watchers
+- **Tasks** with title, description, assignee, priority, tags, watchers, metadata (key/value)
 - Unified **activity stream** (system events + comments)
 - Script-friendly **JSON / CSV / TOON** output and stable process exit codes
 
@@ -46,6 +46,7 @@ Other targets: `make test`, `make vet`, `make fmt`, `make clean`.
 
 ./obd task move 1 --column Doing --by alice
 ./obd task comment 1 --by bob --message "Looks good — need API stub"
+./obd task metadata set 1 jira-key PROJ-123 --by alice
 
 # views
 ./obd board show widget/sprint-1
@@ -90,6 +91,10 @@ Activity (unified stream of events + comments)
   Input is lowercased automatically (`--name Widget` → `widget`); names with
   spaces or other characters are rejected. Put human-readable titles in
   `--description`. (Column names and task titles are free-form.)
+- **Task metadata keys are slugs** (same rules as project/board names, e.g.
+  `jira-key`); values are free-form strings. Each key is unique per task —
+  setting an existing key overwrites its value. Not shown in table output;
+  use `--json`/`--toon` or `task metadata list <id>`.
 - **Default project**: a brand-new database is seeded with a project named
   `default` containing a board `main` (with the standard columns), so tasks
   can be created immediately without any setup. It is an ordinary project —
@@ -168,6 +173,10 @@ Activity (unified stream of events + comments)
 | `task unwatch <id>` | Remove watcher (`--by`) |
 | `task activity <id>` | Show task activity/comments |
 | `task mine` | Tasks assigned to a developer (`--assignee`) |
+| `task metadata set <id> <key> <value>` | Set a metadata key (`--by`) |
+| `task metadata get <id> <key>` | Get a metadata value |
+| `task metadata delete <id> <key>` | Delete a metadata key (`--by`) |
+| `task metadata list <id>` | List a task's metadata key/value pairs |
 
 **create flags:** `--board` (req), `--title` (req), `--description`, `--column`, `--assignee`, `--priority`, `--tags` (comma-separated), `--watchers` (comma-separated refs), `--by` (actor for activity)
 
@@ -176,6 +185,10 @@ Activity (unified stream of events + comments)
 **update flags:** `--title`, `--description`, `--assignee`, `--clear-assignee`, `--priority`, `--tags` (replace), `--by`
 
 **move flags:** `--column` (req), `--position`, `--by`
+
+**metadata:** keys are slugs and unique per task (setting an existing key
+overwrites it); values are free-form strings. There's no bulk flag on
+`create`/`update` — set keys individually with `task metadata set`.
 
 ### `obd activity`
 
@@ -203,7 +216,12 @@ Task payloads, by kind:
 | `commented` | none (the `message` is the comment text) |
 
 A task snapshot contains: `id`, `title`, `description`, `column`, `column_id`,
-`priority`, `position`, `assignee` (username or null), `tags`, `watchers`.
+`priority`, `position`, `assignee` (username or null), `tags`, `watchers`,
+`metadata`.
+
+`task metadata set`/`delete` log as `updated` kind, with a synthetic field
+name `metadata.<key>` in `changes` (e.g. `changes["metadata.jira-key"]`).
+Setting a key to its current value is a no-op and logs nothing.
 
 Other entities use the same scheme: `created`/`deleted` carry a full snapshot
 (`data.project`, `data.board`, `data.column`, `data.developer`), `updated`

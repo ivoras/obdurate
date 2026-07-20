@@ -94,10 +94,11 @@ type Task struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	// hydrated fields
-	ColumnName  string   `json:"column_name,omitempty"`
-	AssigneeRef string   `json:"assignee,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	WatcherRefs []string `json:"watchers,omitempty"`
+	ColumnName  string            `json:"column_name,omitempty"`
+	AssigneeRef string            `json:"assignee,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	WatcherRefs []string          `json:"watchers,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 type Activity struct {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -27,6 +28,7 @@ func newTaskCmd(app *App) *cobra.Command {
 		taskUnwatch(app),
 		taskActivity(app),
 		taskMine(app),
+		newTaskMetadataCmd(app),
 	)
 	return cmd
 }
@@ -344,6 +346,117 @@ func taskMine(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&assignee, "assignee", "", "developer ref (required)")
 	_ = cmd.MarkFlagRequired("assignee")
 	return cmd
+}
+
+func newTaskMetadataCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metadata",
+		Short: "Manage task metadata (key/value pairs)",
+	}
+	cmd.AddCommand(
+		taskMetadataSet(app),
+		taskMetadataGet(app),
+		taskMetadataDelete(app),
+		taskMetadataList(app),
+	)
+	return cmd
+}
+
+func taskMetadataSet(app *App) *cobra.Command {
+	var by string
+	cmd := &cobra.Command{
+		Use:   "set <id> <key> <value>",
+		Short: "Set a metadata key on a task",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			t, err := app.Store.SetTaskMetadata(id, args[1], args[2], by)
+			if err != nil {
+				return err
+			}
+			return printTask(app, t)
+		},
+	}
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref")
+	return cmd
+}
+
+func taskMetadataGet(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <id> <key>",
+		Short: "Get a metadata value from a task",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			value, err := app.Store.GetTaskMetadata(id, args[1])
+			if err != nil {
+				return err
+			}
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(map[string]string{"key": args[1], "value": value})
+			}
+			return app.Print.PrintTable([]string{"KEY", "VALUE"}, [][]string{{args[1], value}})
+		},
+	}
+}
+
+func taskMetadataDelete(app *App) *cobra.Command {
+	var by string
+	cmd := &cobra.Command{
+		Use:   "delete <id> <key>",
+		Short: "Delete a metadata key from a task",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			t, err := app.Store.DeleteTaskMetadata(id, args[1], by)
+			if err != nil {
+				return err
+			}
+			return printTask(app, t)
+		},
+	}
+	cmd.Flags().StringVar(&by, "by", "", "actor developer ref")
+	return cmd
+}
+
+func taskMetadataList(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list <id>",
+		Short: "List metadata for a task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			t, err := app.Store.GetTask(id)
+			if err != nil {
+				return err
+			}
+			if app.Print.PreferStructured() {
+				return app.Print.PrintStructured(t.Metadata)
+			}
+			keys := make([]string, 0, len(t.Metadata))
+			for k := range t.Metadata {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			rows := make([][]string, 0, len(keys))
+			for _, k := range keys {
+				rows = append(rows, []string{k, t.Metadata[k]})
+			}
+			return app.Print.PrintTable([]string{"KEY", "VALUE"}, rows)
+		},
+	}
 }
 
 func printTask(app *App, t *model.Task) error {

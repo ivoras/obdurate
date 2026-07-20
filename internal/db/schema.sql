@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS task_watchers (
     PRIMARY KEY (task_id, developer_id)
 );
 
+CREATE TABLE IF NOT EXISTS task_metadata (
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    key        TEXT    NOT NULL,
+    value      TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL,
+    PRIMARY KEY (task_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS activity (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE,

@@ -85,6 +85,22 @@ func normalizeSlug(name, what string) (string, error) {
 	return name, nil
 }
 
+// normalizeMetadataKey trims, lowercases, and validates a task metadata key
+// using the same slug rules as project/board names.
+func normalizeMetadataKey(key string) (string, error) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "" {
+		return "", fmt.Errorf("%w: metadata key is required", ErrInvalidInput)
+	}
+	if len(key) > maxSlugLen {
+		return "", fmt.Errorf("%w: metadata key is longer than %d characters", ErrInvalidInput, maxSlugLen)
+	}
+	if !slugRe.MatchString(key) {
+		return "", fmt.Errorf("%w: metadata key %q must be a slug: lowercase letters, digits, '-' or '_', starting and ending with a letter or digit", ErrInvalidInput, key)
+	}
+	return key, nil
+}
+
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false

@@ -24,7 +24,11 @@ import (
 //	commented: no payload (message is the comment text)
 //
 // A task snapshot is: {"id", "title", "description", "column", "column_id",
-// "priority", "position", "assignee" (username or null), "tags", "watchers"}.
+// "priority", "position", "assignee" (username or null), "tags", "watchers",
+// "metadata"}.
+//
+// Metadata key set/delete (task metadata set/delete) use the "updated" kind
+// with a synthetic field name "metadata.<key>" in the changes map.
 //
 // Other entities:
 //
@@ -58,6 +62,10 @@ func taskSnapshot(t *model.Task) map[string]any {
 	if watchers == nil {
 		watchers = []string{}
 	}
+	metadata := t.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
 	return map[string]any{
 		"id":          t.ID,
 		"title":       t.Title,
@@ -69,6 +77,7 @@ func taskSnapshot(t *model.Task) map[string]any {
 		"assignee":    assignee,
 		"tags":        tags,
 		"watchers":    watchers,
+		"metadata":    metadata,
 	}
 }
 
