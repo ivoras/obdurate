@@ -59,7 +59,7 @@ Conventions:
 | Project | Multiple boards. Names are slugs (`normalizeSlug` in store.go: lowercase ascii/digits/`-`/`_`, ≤64 chars; input auto-lowercased). A fresh DB is seeded with project `default` + board `main` (`store.EnsureDefaults`, called from root.go; only when zero projects exist) |
 | Board | Belongs to project; ref: `id` \| name \| `project/board`. Names are slugs (same rules as projects) |
 | Column | Per-board; default Todo, Doing, Done on create; ordered by `position` |
-| Task | title, description, assignee, priority, tags, watchers, metadata (key/value, `task_metadata` table), position in column |
+| Task | title, description, assignee, priority, tags, watchers, metadata (key/value, `task_metadata` table), position in column. Title/description are indexed by `tasks_fts` (SQLite FTS5, external-content, `internal/store/search.go`) for `task search`. |
 | Activity | Unified stream covering ALL mutations (tasks, projects, boards, columns, developers): created, updated, moved, commented, watched, unwatched, deleted. Each row has a `data` JSON payload (`data.entity` + old/new values or snapshots) so state transitions are reconstructible; payload shapes are documented at the top of `internal/store/activity.go` and in README. Deletions detach (never cascade-delete) history: ids move into `data.task_id`/`data.board_id`/`data.project_id`, and deleted developers' authorship is kept in `data.actor`. When adding a store mutation, log it in the same tx via `addActivityTx` and accept an actor ref (`--by`). |
 
 Priority: `low|medium|high|critical` (default medium).
@@ -87,6 +87,26 @@ Priority: `low|medium|high|critical` (default medium).
 - Foreign keys enabled; cascading deletes for project/board managers
 - Column additions to existing tables need an explicit `ensureColumn` call in
   `internal/db/db.go` (`CREATE TABLE IF NOT EXISTS` never alters old tables)
+- `tasks_fts` (FTS5, external-content over `tasks`, title+description) is
+  kept in sync by triggers (`tasks_ai`/`tasks_ad`/`tasks_au` in schema.sql),
+  and backfilled once for pre-existing rows by `backfillTasksFTS` in db.go.
+  Two FTS5 pitfalls found the hard way, both covered by regression tests
+  (`TestOpenBackfillsTasksFTS` in db, `TestSearchTasks*` in store):
+  - On an **external-content** table, `SELECT count(*) FROM tasks_fts`
+    (no `MATCH`) silently passes through to the content table's row count
+    regardless of whether the FTS index actually has anything — it is NOT a
+    valid "is this indexed" signal. Use `SELECT count(*) FROM
+    tasks_fts_docsize` instead (one real row per indexed doc).
+  - Manual per-row `INSERT INTO tasks_fts(rowid, col, ...) SELECT ... FROM
+    tasks` to bulk-populate an external-content table was observed to
+    silently fail to update the shadow index in this driver (row "counts"
+    but `MATCH` finds nothing). Use FTS5's own `INSERT INTO
+    tasks_fts(tasks_fts) VALUES('rebuild')` command instead.
+  - Also: raw FTS5 `MATCH` query syntax treats bare hyphens as the `NOT`
+    operator (`PROJ-123` → parse error, "no such column: 123"), so
+    `SearchTasks` (`internal/store/search.go`) builds the match expression
+    via `buildMatchQuery`, which quotes every whitespace-separated term.
+    Don't pass raw user input straight to `MATCH`.
 
 ### Output
 
@@ -179,6 +199,7 @@ After meaningful CLI changes, do a short smoke path:
 ./obd --db /tmp/obd-smoke.db board create --project p --name b
 ./obd --db /tmp/obd-smoke.db task create --board p/b --title t --by a
 ./obd --db /tmp/obd-smoke.db task metadata set 1 jira-key PROJ-1 --by a
+./obd --db /tmp/obd-smoke.db task search t
 ./obd --db /tmp/obd-smoke.db board show p/b
 ./obd --db /tmp/obd-smoke.db export tasks --board p/b --json
 ```

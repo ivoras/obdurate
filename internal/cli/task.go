@@ -28,6 +28,7 @@ func newTaskCmd(app *App) *cobra.Command {
 		taskUnwatch(app),
 		taskActivity(app),
 		taskMine(app),
+		taskSearch(app),
 		newTaskMetadataCmd(app),
 	)
 	return cmd
@@ -346,6 +347,56 @@ func taskMine(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&assignee, "assignee", "", "developer ref (required)")
 	_ = cmd.MarkFlagRequired("assignee")
 	return cmd
+}
+
+func taskSearch(app *App) *cobra.Command {
+	var board, project string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Full-text search over task title and description",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hits, err := app.Store.SearchTasks(store.TaskSearchFilter{
+				Query:      args[0],
+				BoardRef:   board,
+				ProjectRef: project,
+				Limit:      limit,
+			})
+			if err != nil {
+				return err
+			}
+			return printTaskSearchHits(app, hits)
+		},
+	}
+	cmd.Flags().StringVar(&board, "board", "", "restrict to a board (project/board)")
+	cmd.Flags().StringVar(&project, "project", "", "restrict to a project (ignored if --board is set)")
+	cmd.Flags().IntVar(&limit, "limit", 20, "max results (capped at 200)")
+	return cmd
+}
+
+func printTaskSearchHits(app *App, hits []model.TaskSearchHit) error {
+	if app.Print.PreferStructured() {
+		return app.Print.PrintStructured(hits)
+	}
+	headers := []string{"ID", "BOARD", "COLUMN", "TITLE", "RANK", "SNIPPET"}
+	rows := make([][]string, 0, len(hits))
+	for i := range hits {
+		h := &hits[i]
+		title := h.TitleHighlight
+		if title == "" {
+			title = h.Title
+		}
+		rows = append(rows, []string{
+			strconv.FormatInt(h.ID, 10),
+			strconv.FormatInt(h.BoardID, 10),
+			h.ColumnName,
+			title,
+			strconv.FormatFloat(h.Rank, 'f', 4, 64),
+			h.DescriptionHighlight,
+		})
+	}
+	return app.Print.PrintTable(headers, rows)
 }
 
 func newTaskMetadataCmd(app *App) *cobra.Command {

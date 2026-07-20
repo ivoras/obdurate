@@ -146,6 +146,11 @@ lowercases input itself but REJECTS names with spaces or other characters
   you have not seen, verify it exists with
   `obd --db <path> column list --board <project/board> --json`.
 - **Do not edit the SQLite file directly.** Always go through `obd`.
+- **`task search` has no boolean/prefix query syntax** — no `AND`/`OR`/`NOT`/
+  `*`. Every word in the query is matched literally (including ones that
+  contain `-`, e.g. `task search PROJ-123` works as expected), and multiple
+  words are ANDed together. Don't construct FTS-style boolean expressions;
+  just pass the words the user cares about.
 - **Deletes are permanent** (a task's history is preserved in the activity
   stream, but the task itself is not recoverable). Confirm with the user
   before `task delete`, `board delete`, `project delete`, or
@@ -175,10 +180,22 @@ lowercases input itself but REJECTS names with spaces or other characters
 | "watch/follow task X" | `task watch <id> --by <ref>` |
 | "add a Review column" | `column add --board <project/board> --name Review --position <n>` |
 | "export the tasks" | `export tasks --board <ref> --json` (or `--csv`) |
+| "find/search for tasks about X", "which task mentions X" | `task search "X" --json` (optionally `--board`/`--project`; searches title + description, ranked best-match first) |
 
-When the user names a task by title instead of id, find the id first:
-`task list --json` (optionally filtered by board/project) and match the
-`title` field case-insensitively. If several match, show them and ask.
+When the user names a task by title instead of id, find the id first. Two
+options, pick based on what you're matching:
+- **Exact/near-exact title**: `task list --json` (optionally filtered by
+  board/project) and match the `title` field case-insensitively.
+- **Fuzzy or partial wording, or matching on description content too**:
+  `task search "<words>" --json` (optionally `--board`/`--project`) —
+  full-text search over title AND description, ranked by relevance
+  (`rank`, more negative = better match; results already come back sorted
+  best-first). Each hit also has `title_highlight`/`description_highlight`
+  with matched terms wrapped in `**...**`, handy for showing the user why a
+  result matched.
+
+If several candidates match either way, show them (with enough context —
+title, column, id) and ask which one the user means.
 
 ## Day-to-day software development operations
 

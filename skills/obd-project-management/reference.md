@@ -94,6 +94,7 @@ free-form.
 | `task watch <id>` / `task unwatch <id>` | `--by` (req) |
 | `task activity <id>` | `--limit` (default 50) |
 | `task mine` | `--assignee` (req) — tasks assigned to that developer across all projects |
+| `task search <query>` | `--board`, `--project` (optional scope), `--limit` (default 20, capped 200) — full-text search over title+description (SQLite FTS5). Results are ranked best-match-first (`bm25`); no boolean/prefix syntax — every word is a literal, words are ANDed. See below. |
 | `task metadata set <id> <key> <value>` | `--by` — upsert one key. Key is normalized to a slug (lowercase letters/digits/`-`/`_`, ≤64 chars, same rule as project/board names); value is a free-form string. One key = one value per task; setting an existing key overwrites it. Setting the current value again is a no-op (no activity logged). |
 | `task metadata get <id> <key>` | — returns that key's value; exit 2 if the key isn't set |
 | `task metadata delete <id> <key>` | `--by` — idempotent: deleting an unset key is a no-op |
@@ -103,6 +104,24 @@ Task JSON fields: `id`, `board_id`, `column_id`, `column_name`, `title`,
 `description`, `priority`, `position`, `assignee` (username), `assignee_id`,
 `tags`, `watchers`, `metadata` (object, omitted when empty), `created_at`,
 `updated_at`.
+
+### `task search` result shape
+
+Each hit is a task object (same fields as above) plus:
+
+- `rank` — bm25 relevance score; **lower (more negative) is a better
+  match**. Results are always returned best-match-first, so you don't need
+  to sort client-side.
+- `title_highlight` / `description_highlight` — the field with matched
+  terms wrapped in `**...**` (e.g. `"**Login** page crashes"`). Empty
+  string when that field had no match (e.g. the hit matched only via title,
+  so `description_highlight` is `""`).
+
+Query handling: the query string is NOT raw FTS5 syntax. Every
+whitespace-separated word is matched as a literal term (so punctuation like
+`-` or `:` inside a word is literal, not an operator), and multiple words
+are combined with AND. There is no way to do OR/NOT/prefix-wildcard
+searches — don't try to build one.
 
 Lifecycle: created (into first column by default) → moved between columns
 (the column is the task's only status; Done is a convention, not a lock) →

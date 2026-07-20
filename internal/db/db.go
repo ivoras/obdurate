@@ -48,7 +48,42 @@ func migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "activity", "data", "TEXT"); err != nil {
 		return fmt.Errorf("migrate activity.data: %w", err)
 	}
+	if err := backfillTasksFTS(db); err != nil {
+		return fmt.Errorf("backfill tasks_fts: %w", err)
+	}
 	return nil
+}
+
+// backfillTasksFTS populates tasks_fts for databases that already had rows
+// in tasks before the FTS5 table (and its sync triggers) existed; triggers
+// only cover writes made after they were created. Uses FTS5's 'rebuild'
+// command rather than a manual per-row INSERT: manual INSERTs into an
+// external-content table were observed to be silently unreliable here (the
+// row "counts" but MATCH never finds it), whereas 'rebuild' is SQLite's own
+// documented, robust way to resync the index from the content table.
+//
+// The populated check queries tasks_fts_docsize (a real shadow table, one
+// row per indexed doc) rather than "SELECT count(*) FROM tasks_fts": for an
+// external-content table, a plain (non-MATCH) count on the FTS table itself
+// passes through to the content table's row count regardless of whether
+// the index was ever built, so it can't be used as a populated signal.
+func backfillTasksFTS(db *sql.DB) error {
+	var docCount int
+	if err := db.QueryRow(`SELECT count(*) FROM tasks_fts_docsize`).Scan(&docCount); err != nil {
+		return err
+	}
+	if docCount > 0 {
+		return nil
+	}
+	var taskCount int
+	if err := db.QueryRow(`SELECT count(*) FROM tasks`).Scan(&taskCount); err != nil {
+		return err
+	}
+	if taskCount == 0 {
+		return nil
+	}
+	_, err := db.Exec(`INSERT INTO tasks_fts(tasks_fts) VALUES('rebuild')`)
+	return err
 }
 
 // ensureColumn adds a column to a pre-existing table; CREATE TABLE IF NOT

@@ -101,6 +101,17 @@ type Task struct {
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
+// TaskSearchHit is one result of a full-text search over task title and
+// description. Rank is SQLite FTS5's bm25 score: lower (more negative) is a
+// better match; results are ordered best-first. TitleHighlight and
+// DescriptionHighlight wrap matched terms in "**...**".
+type TaskSearchHit struct {
+	Task
+	Rank                 float64 `json:"rank"`
+	TitleHighlight       string  `json:"title_highlight,omitempty"`
+	DescriptionHighlight string  `json:"description_highlight,omitempty"`
+}
+
 type Activity struct {
 	ID        int64  `json:"id"`
 	TaskID    *int64 `json:"task_id,omitempty"`

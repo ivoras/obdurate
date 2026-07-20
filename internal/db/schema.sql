@@ -64,6 +64,28 @@ CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_column ON tasks(column_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
 
+-- External-content FTS5 index over tasks(title, description). The tasks
+-- table is the source of truth; tasks_fts.rowid mirrors tasks.id. Kept in
+-- sync by the tasks_ai/tasks_ad/tasks_au triggers below, per the standard
+-- SQLite external-content-table pattern. Pre-existing rows in databases
+-- created before this table existed are backfilled once in db.go.
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+    title, description, content='tasks', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_ai AFTER INSERT ON tasks BEGIN
+    INSERT INTO tasks_fts(rowid, title, description) VALUES (new.id, new.title, new.description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_ad AFTER DELETE ON tasks BEGIN
+    INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.id, old.title, old.description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_au AFTER UPDATE ON tasks BEGIN
+    INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.id, old.title, old.description);
+    INSERT INTO tasks_fts(rowid, title, description) VALUES (new.id, new.title, new.description);
+END;
+
 CREATE TABLE IF NOT EXISTS tags (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT    NOT NULL COLLATE NOCASE UNIQUE

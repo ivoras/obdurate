@@ -7,6 +7,7 @@ CLI project management tool with a kanban-style workflow. Data is stored in SQLi
 - Multiple **projects**, each with multiple **kanban boards**
 - Columns customizable per board (defaults: **Todo / Doing / Done**)
 - **Tasks** with title, description, assignee, priority, tags, watchers, metadata (key/value)
+- **Full-text search** over task title/description (SQLite FTS5), with relevance ranking and highlighted excerpts
 - Unified **activity stream** (system events + comments)
 - Script-friendly **JSON / CSV / TOON** output and stable process exit codes
 
@@ -173,6 +174,7 @@ Activity (unified stream of events + comments)
 | `task unwatch <id>` | Remove watcher (`--by`) |
 | `task activity <id>` | Show task activity/comments |
 | `task mine` | Tasks assigned to a developer (`--assignee`) |
+| `task search <query>` | Full-text search over title/description (`--board`, `--project`, `--limit`) |
 | `task metadata set <id> <key> <value>` | Set a metadata key (`--by`) |
 | `task metadata get <id> <key>` | Get a metadata value |
 | `task metadata delete <id> <key>` | Delete a metadata key (`--by`) |
@@ -189,6 +191,20 @@ Activity (unified stream of events + comments)
 **metadata:** keys are slugs and unique per task (setting an existing key
 overwrites it); values are free-form strings. There's no bulk flag on
 `create`/`update` — set keys individually with `task metadata set`.
+
+**search:** matches title and description (SQLite FTS5), ranked by
+relevance (bm25, best match first). Results include `rank`,
+`title_highlight`, and `description_highlight` (matched terms wrapped in
+`**`); the default table view shows a snippet from the description
+highlight. Every whitespace-separated word in the query is matched as a
+literal (quoted internally), and multiple words are ANDed together — so
+`task search PROJ-123` and `task search login page` both work as expected.
+There's no boolean/prefix query syntax (`AND`/`OR`/`NOT`/`*`); a query with
+those words searches for them literally, not as operators. `--limit`
+defaults to 20 and is capped at 200. The index updates automatically via
+SQLite triggers on every task create/update/delete, including for databases
+created before this feature existed (backfilled once on first open after
+upgrading).
 
 ### `obd activity`
 
@@ -261,6 +277,9 @@ Generate shell completion scripts (`obd completion --help`).
 
 # my work as bob (ref by email)
 ./obd task mine --assignee bob@example.com
+
+# full-text search, scoped to a board, best match first
+./obd task search "login crash" --board widget/sprint-1
 
 # JSON for scripting
 ./obd task list --board widget/sprint-1 --json | jq '.[].title'
