@@ -196,13 +196,25 @@ task. Model developer-workflow requests like this:
      the user gave that information.
 - **Pull request context**: if the discussion that leads to creating a task
   mentions a PR (a pull/merge request id, number, or URL — "PR #123",
-  "!45", a github.com/.../pull/123 link), record that reference in the
-  task's `--description` (e.g. `--description "Fix header parsing. PR:
-  #123"`). Same when a PR comes up later for an existing task: append it to
-  the description with `task update <id> --description "<existing text>
-  PR: #123"` — read the current description first (`task get <id> --json`)
-  and keep it; `--description` replaces the whole field. There is no
-  dedicated PR field, so the description is where PR links live.
+  "!45", a github.com/.../pull/123 link), record that reference in TWO
+  places:
+  1. The task's `--description` (e.g. `--description "Fix header parsing.
+     PR: #123"`) — free-text, keeps the human-readable context.
+  2. Its metadata, under the `pr` key: `task metadata set <id> pr
+     "<reference>" --by <actor>` — run this right after `task create`
+     returns the new id. Use the full URL if one was given (e.g.
+     `https://github.com/org/repo/pull/123`); otherwise store the bare
+     reference as given (`#123`, `!45`). This makes the PR queryable
+     without parsing free text (`task metadata get <id> pr`).
+
+  Same when a PR comes up later for an existing task: append it to the
+  description with `task update <id> --description "<existing text> PR:
+  #123"` — read the current description first (`task get <id> --json`) and
+  keep it; `--description` replaces the whole field — AND update the
+  metadata with `task metadata set <id> pr "<reference>" --by <actor>`.
+  `task metadata set` overwrites the previous `pr` value (one task = one
+  `pr` key), so if several PRs touch the same task, put the newest/most
+  relevant one in metadata and rely on the description for the full list.
 - **"File a bug: ..."** — a task tagged `bug`: include `--tags bug` (plus
   any other tags) and put reproduction details in `--description`. Severity
   words map to priority: "blocker/critical" → `critical`, "major/serious" →

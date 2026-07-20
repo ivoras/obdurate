@@ -94,10 +94,15 @@ free-form.
 | `task watch <id>` / `task unwatch <id>` | `--by` (req) |
 | `task activity <id>` | `--limit` (default 50) |
 | `task mine` | `--assignee` (req) — tasks assigned to that developer across all projects |
+| `task metadata set <id> <key> <value>` | `--by` — upsert one key. Key is normalized to a slug (lowercase letters/digits/`-`/`_`, ≤64 chars, same rule as project/board names); value is a free-form string. One key = one value per task; setting an existing key overwrites it. Setting the current value again is a no-op (no activity logged). |
+| `task metadata get <id> <key>` | — returns that key's value; exit 2 if the key isn't set |
+| `task metadata delete <id> <key>` | `--by` — idempotent: deleting an unset key is a no-op |
+| `task metadata list <id>` | — all key/value pairs for the task |
 
 Task JSON fields: `id`, `board_id`, `column_id`, `column_name`, `title`,
 `description`, `priority`, `position`, `assignee` (username), `assignee_id`,
-`tags`, `watchers`, `created_at`, `updated_at`.
+`tags`, `watchers`, `metadata` (object, omitted when empty), `created_at`,
+`updated_at`.
 
 Lifecycle: created (into first column by default) → moved between columns
 (the column is the task's only status; Done is a convention, not a lock) →
@@ -127,7 +132,7 @@ developer changes appear too, with `data.entity` naming the object kind.
 | kind | data |
 |---|---|
 | `created` | `{"task": <snapshot>}` |
-| `updated` | `{"changes": {"<field>": {"old": ..., "new": ...}}}` — fields: `title`, `description`, `priority`, `assignee` (username or null), `tags` (arrays) |
+| `updated` | `{"changes": {"<field>": {"old": ..., "new": ...}}}` — fields: `title`, `description`, `priority`, `assignee` (username or null), `tags` (arrays); metadata set/delete use a synthetic field name `metadata.<key>` (e.g. `changes["metadata.pr"]`) |
 | `moved` | `{"from": {"column", "column_id", "position"}, "to": {same}}` |
 | `deleted` | `{"task": <snapshot of final state>}` |
 | `watched` / `unwatched` | `{"developer": "<username>"}` |
@@ -140,7 +145,8 @@ positions. Project/board rows are scoped to their project (and board) ids;
 developer rows are global (no project filter matches them).
 
 Snapshot = `{"id", "title", "description", "column", "column_id",
-"priority", "position", "assignee" (username or null), "tags", "watchers"}`.
+"priority", "position", "assignee" (username or null), "tags", "watchers",
+"metadata"}`.
 
 When a task is deleted, its activity rows stay in the board/project streams
 with `task_id` set to null and the original id preserved as `data.task_id`,
