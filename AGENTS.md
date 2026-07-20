@@ -155,7 +155,8 @@ previous tag and this one — do this every time a release is created:
 2. Write a short prose summary grouped by theme (features / fixes / docs),
    derived only from those commit messages — do not invent items that are
    not in the commits. Subject lines map to bullets; commit bodies supply
-   the detail worth surfacing.
+   the detail worth surfacing. Include the code-name justification line
+   required below, near the top.
 3. Apply it: `gh release edit vX.Y.Z --notes-file <file>` once the CI-created
    release exists (CI's auto-generated notes are only a placeholder). Keep
    the auto-generated "Full Changelog" compare link at the bottom.
@@ -172,12 +173,16 @@ preserving deleted history *Pet Sematary*, one that escapes a long-standing
 bug *Shawshank*.
 
 1. Pick a title, character, situation, or trope whose theme echoes the
-   release's content; a one-line justification in the release notes is
-   welcome but optional.
+   release's content.
 2. Uniqueness: never reuse a name — check `gh release list` first.
 3. Set the release title to `vX.Y.Z - <code name>`:
    `gh release edit vX.Y.Z --title "vX.Y.Z - <code name>"`
    (do this together with applying the release description).
+4. **Mandatory**: include a short (one-line) justification of why the name
+   was picked in the release description itself — not just the title. Put
+   it right after the title/summary, before the per-theme bullets (e.g. "Named
+   for *the Dead Zone*: this release adds search — finding things others
+   can't — plus a backfill that reawakens old tasks into searchability.").
 
 Keep README **Releases (CI)** section in sync if the workflow or assets change.
 
