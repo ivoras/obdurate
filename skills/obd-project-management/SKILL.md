@@ -294,7 +294,10 @@ need history back to the `created` event.
 - After a mutation, confirm with the concrete result ("Created task #7
   'Fix login' in Todo on widget/sprint-1"), taking values from the command's
   JSON output — not from your assumptions.
-- For listings, prefer a short readable summary or table over raw JSON.
+- **Listing tasks, columns ("lists"), or boards: always render as a
+  table.** `obd` has no sort flag, so fetch `--json` and sort client-side
+  before printing: tasks by priority (critical, high, medium, low) then id;
+  columns and boards by name.
 - Never invent ids, columns, or usernames: every id you mention must come
   from command output.
 
